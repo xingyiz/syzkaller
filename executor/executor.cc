@@ -62,7 +62,7 @@ typedef unsigned char uint8;
 // Note: zircon max fd is 256.
 // Some common_OS.h files know about this constant for RLIMIT_NOFILE.
 const int kMaxFd = 250;
-const int kMaxThreads = 32;
+const int kMaxThreads = 90;
 const int kInPipeFd = kMaxFd - 1; // remapped from stdin
 const int kOutPipeFd = kMaxFd - 2; // remapped from stdout
 const int kCoverFd = kOutPipeFd - kMaxThreads;
@@ -917,6 +917,7 @@ void execute_one()
 			if (th != &threads[0])
 				fail("using non-main thread in non-thread mode");
 			event_reset(&th->ready);
+			sched_yield();
 			execute_call(th);
 			event_set(&th->done);
 			handle_completion(th);
@@ -1243,6 +1244,11 @@ void thread_mmap_cover(thread_t* th)
 
 void* worker_thread(void* arg)
 {
+	pid_t tid = syscall(__NR_gettid);
+	int policy = sched_getscheduler(tid);
+	int cpu = sched_getcpu();
+	fprintf(stderr, "[XY_LOG] thread %d: start (policy=%d cpu=%d)\n", tid, policy, cpu);
+
 	thread_t* th = (thread_t*)arg;
 	current_thread = th;
 	if (cover_collection_required())
@@ -1250,6 +1256,7 @@ void* worker_thread(void* arg)
 	for (;;) {
 		event_wait(&th->ready);
 		event_reset(&th->ready);
+		sched_yield();
 		execute_call(th);
 		event_set(&th->done);
 	}

@@ -60,7 +60,7 @@ func newProc(fuzzer *Fuzzer, pid int) (*Proc, error) {
 }
 
 func (proc *Proc) loop() {
-	generatePeriod := 100
+	generatePeriod := 10
 	if proc.fuzzer.config.Flags&ipc.FlagSignal == 0 {
 		// If we don't have real coverage signal, generate programs more frequently
 		// because fallback signal is weak.
@@ -79,7 +79,7 @@ func (proc *Proc) loop() {
 			default:
 				log.SyzFatalf("unknown work type: %#v", item)
 			}
-			continue
+			// continue
 		}
 
 		ct := proc.fuzzer.choiceTable
@@ -92,7 +92,7 @@ func (proc *Proc) loop() {
 		} else {
 			// Mutate an existing prog.
 			p := fuzzerSnapshot.chooseProgram(proc.rnd).Clone()
-			p.Mutate(proc.rnd, prog.RecommendedCalls, ct, proc.fuzzer.noMutate, fuzzerSnapshot.corpus)
+			p.MutateXY(proc.rnd, prog.RecommendedCalls, ct, proc.fuzzer.noMutate, fuzzerSnapshot.corpus)
 			log.Logf(1, "#%v: mutated", proc.pid)
 			proc.executeAndCollide(proc.execOpts, p, ProgNormal, StatFuzz)
 		}
@@ -293,7 +293,7 @@ func (proc *Proc) executeAndCollide(execOpts *ipc.ExecOpts, p *prog.Prog, flags 
 		// We cannot collide syscalls without being in the threaded mode.
 		return
 	}
-	const collideIterations = 2
+	const collideIterations = 5
 	for i := 0; i < collideIterations; i++ {
 		proc.executeRaw(proc.execOptsCollide, proc.randomCollide(p), StatCollide)
 	}

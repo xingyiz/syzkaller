@@ -14,7 +14,7 @@ import (
 // that timed out. If we just ignore that limit, we could end up generating programs that
 // would force the executor to fail and thus stall the fuzzing process.
 // As an educated guess, let's use no more than 24 async calls to let executor handle everything.
-const maxAsyncPerProg = 24
+const maxAsyncPerProg = 84
 
 // Ensures that if an async call produces a resource, then
 // it is distanced from a call consuming the resource at least
@@ -44,7 +44,8 @@ func AssignRandomAsync(origProg *Prog, rand *rand.Rand) *Prog {
 			}
 		})
 		// Make async with a 66% chance (but never the last call).
-		if !producesUnassigned && i+1 != len(prog.Calls) && rand.Intn(3) != 0 {
+		// XY: Modified to 80% to increase chance of async calls, but not 100% to avoid shallow segfaults.
+		if !producesUnassigned && i+1 != len(prog.Calls) && !(rand.Intn(5) == 0) { // && rand.Intn(3) != 0 {
 			call.Props.Async = true
 			for res := range consumes {
 				unassigned[res] = true

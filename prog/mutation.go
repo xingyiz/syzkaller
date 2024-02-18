@@ -60,6 +60,44 @@ func (p *Prog) Mutate(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[
 	}
 }
 
+// XY: Make longer syscalls
+func (p *Prog) MutateXY(rs rand.Source, ncalls int, ct *ChoiceTable, noMutate map[int]bool, corpus []*Prog) {
+	r := newRand(p.Target, rs)
+	if ncalls < len(p.Calls) {
+		ncalls = len(p.Calls)
+	}
+	ctx := &mutator{
+		p:        p,
+		r:        r,
+		ncalls:   ncalls,
+		ct:       ct,
+		noMutate: noMutate,
+		corpus:   corpus,
+	}
+
+	for stop, ok := false, false; !stop || len(p.Calls) < ncalls; stop = ok && len(p.Calls) != 0 {
+		switch {
+		case r.oneOf(5):
+			// Not all calls have anything squashable,
+			// so this has lower priority in reality.
+			ok = ctx.squashAny()
+		case r.nOutOf(1, 100):
+			ok = ctx.splice()
+		case r.nOutOf(20, 31):
+			ok = ctx.insertCall()
+		case r.nOutOf(10, 11):
+			ok = ctx.mutateArg()
+		default:
+			ok = ctx.removeCall()
+		}
+	}
+	p.sanitizeFix()
+	p.debugValidate()
+	if got := len(p.Calls); got < 1 || got > ncalls {
+		panic(fmt.Sprintf("bad number of calls after mutation: %v, want [1, %v]", got, ncalls))
+	}
+}
+
 // Internal state required for performing mutations -- currently this matches
 // the arguments passed to Mutate().
 type mutator struct {

@@ -17,10 +17,10 @@ import (
 
 const (
 	// "Recommended" number of calls in programs that we try to aim at during fuzzing.
-	RecommendedCalls = 30
+	RecommendedCalls = 100
 	// "Recommended" max number of calls in programs.
 	// If we receive longer programs from hub/corpus we discard them.
-	MaxCalls = 40
+	MaxCalls = 110
 )
 
 type randGen struct {
