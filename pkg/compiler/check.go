@@ -31,7 +31,7 @@ func (comp *compiler) check(consts map[string]uint64) {
 	comp.checkAttributeValues()
 	comp.checkUnused()
 	comp.checkRecursion()
-	comp.checkLenTargets()
+	comp.checkFieldPaths()
 	comp.checkConstructors()
 	comp.checkVarlens()
 	comp.checkDupConsts()
@@ -206,12 +206,21 @@ func (comp *compiler) checkStructFields(n *ast.Struct, typ, name string) {
 		comp.error(n.Pos, "%v %v has no fields, need at least 1 field", typ, name)
 	}
 	hasDirections, hasOutOverlay := false, false
+	prevFieldHadIf := false
 	for fieldIdx, f := range n.Fields {
 		if n.IsUnion {
-			comp.parseAttrs(unionFieldAttrs, f, f.Attrs)
+			_, exprs := comp.parseAttrs(unionFieldAttrs, f, f.Attrs)
+			if fieldIdx > 0 && fieldIdx+1 < len(n.Fields) &&
+				prevFieldHadIf && exprs[attrIf] == nil {
+				comp.error(f.Pos, "either no fields have conditions or all except the last")
+			}
+			prevFieldHadIf = exprs[attrIf] != nil
+			if fieldIdx+1 == len(n.Fields) && exprs[attrIf] != nil {
+				comp.error(f.Pos, "unions must not have if conditions on the last field")
+			}
 			continue
 		}
-		attrs := comp.parseAttrs(structFieldAttrs, f, f.Attrs)
+		attrs, _ := comp.parseAttrs(structFieldAttrs, f, f.Attrs)
 		dirCount := attrs[attrIn] + attrs[attrOut] + attrs[attrInOut]
 		if dirCount != 0 {
 			hasDirections = true
@@ -362,7 +371,7 @@ func (comp *compiler) checkAttributeValues() {
 			}
 		case *ast.Call:
 			attrNames := make(map[string]bool)
-			descAttrs := comp.parseAttrs(callAttrs, n, n.Attrs)
+			descAttrs := comp.parseIntAttrs(callAttrs, n, n.Attrs)
 			for desc := range descAttrs {
 				attrNames[prog.CppName(desc.Name)] = true
 			}
@@ -404,23 +413,32 @@ func (comp *compiler) checkRequiredCallAttrs(call *ast.Call, callAttrNames map[s
 	}
 }
 
-func (comp *compiler) checkLenTargets() {
+func (comp *compiler) checkFieldPaths() {
 	warned := make(map[string]bool)
 	for _, decl := range comp.desc.Nodes {
 		switch n := decl.(type) {
 		case *ast.Call:
 			for _, arg := range n.Args {
 				checked := make(map[string]bool)
-				parents := []parentDesc{{fields: n.Args}}
-				comp.checkLenType(arg.Type, arg.Type, parents, checked, warned, true)
+
+				parents := []parentDesc{{fields: n.Args, call: n.Name.Name}}
+				comp.checkFieldPathsRec(arg.Type, arg.Type, parents, checked, warned, true)
 			}
 		}
 	}
 }
 
 type parentDesc struct {
+	call   string
 	name   string
 	fields []*ast.Field
+}
+
+func (pd *parentDesc) String() string {
+	if pd.call != "" {
+		return fmt.Sprintf("<%s>", pd.call)
+	}
+	return pd.name
 }
 
 // templateBase return the part before '[' for full template names.
@@ -436,44 +454,76 @@ func parentTargetName(s *ast.Struct) string {
 	return templateBase(s.Name.Name)
 }
 
-func (comp *compiler) checkLenType(t0, t *ast.Type, parents []parentDesc,
+func (comp *compiler) checkFieldPathsRec(t0, t *ast.Type, parents []parentDesc,
 	checked, warned map[string]bool, isArg bool) {
 	desc := comp.getTypeDesc(t)
 	if desc == typeStruct {
 		s := comp.structs[t.Ident]
 		// Prune recursion, can happen even on correct tree via opt pointers.
-		if checked[s.Name.Name] {
+		// There may be several paths to the same type, let's at least look
+		// at the nearest parent.
+		checkName := s.Name.Name
+		if len(parents) > 1 {
+			checkName = parents[len(parents)-2].name + " " + checkName
+		}
+		if checked[checkName] {
 			return
 		}
-		checked[s.Name.Name] = true
+		checked[checkName] = true
 		fields := s.Fields
 		if s.IsUnion {
 			fields = nil
 		}
 		parentName := parentTargetName(s)
+		parents = append([]parentDesc{}, parents...)
 		parents = append(parents, parentDesc{name: parentName, fields: fields})
 		for _, fld := range s.Fields {
-			comp.checkLenType(fld.Type, fld.Type, parents, checked, warned, false)
+			comp.checkFieldPathsRec(fld.Type, fld.Type, parents, checked, warned, false)
+			for _, attr := range fld.Attrs {
+				attrDesc := structFieldAttrs[attr.Ident]
+				if attrDesc == nil || attrDesc.Type != exprAttr {
+					continue
+				}
+				if attrDesc == attrIf {
+					comp.checkExprFieldType(fld.Type)
+				}
+				ast.Recursive(func(n ast.Node) bool {
+					exprType, ok := n.(*ast.Type)
+					if !ok || exprType.Ident != valueIdent {
+						return true
+					}
+					comp.validateFieldPath(exprType.Args[0], t0, exprType, parents, warned)
+					return false
+				})(attr.Args[0])
+			}
 		}
-		warned[parentName] = true
 		return
 	}
 	_, args, _ := comp.getArgsBase(t, isArg)
 	for i, arg := range args {
 		argDesc := desc.Args[i]
 		if argDesc.Type == typeArgLenTarget {
-			comp.checkLenTarget(arg, t0, t, parents, warned)
+			comp.validateFieldPath(arg, t0, t, parents, warned)
 		} else if argDesc.Type == typeArgType {
-			comp.checkLenType(t0, arg, parents, checked, warned, argDesc.IsArg)
+			comp.checkFieldPathsRec(t0, arg, parents, checked, warned, argDesc.IsArg)
 		}
 	}
 }
 
-func (comp *compiler) checkLenTarget(arg, t0, t *ast.Type, parents []parentDesc, warned map[string]bool) {
+func (comp *compiler) validateFieldPath(arg, fieldType, t *ast.Type, parents []parentDesc,
+	warned map[string]bool) {
 	targets := append([]*ast.Type{arg}, arg.Colon...)
+	const maxParents = 2
 	for i, target := range targets {
-		if target.Ident == prog.ParentRef && len(targets) != 1 {
-			comp.error(target.Pos, "%v can't be part of path expressions", prog.ParentRef)
+		if target.Ident == prog.ParentRef &&
+			(i >= maxParents || targets[0].Ident != prog.ParentRef) {
+			// It's not a fundamental limitation, but it helps prune recursion in checkLenType().
+			// If we need more, we need to adjust the key of the "checked" map.
+			if !warned[parents[len(parents)-1].name] {
+				comp.error(target.Pos, "%v may only stay at the beginning (max %d times)",
+					prog.ParentRef, maxParents)
+			}
+			warned[parents[len(parents)-1].name] = true
 			return
 		}
 		if target.Ident == prog.SyscallRef {
@@ -487,14 +537,39 @@ func (comp *compiler) checkLenTarget(arg, t0, t *ast.Type, parents []parentDesc,
 			}
 		}
 	}
-	comp.checkLenTargetRec(t0, t, targets, parents, warned)
+	// Drop parents from the prefix (it will simplify further code).
+	droppedParents := 0
+	for len(targets) > 0 && targets[0].Ident == prog.ParentRef {
+		target := targets[0]
+		if parents[len(parents)-1].call != "" {
+			comp.error(target.Pos, "%v reached the call (%v)",
+				prog.ParentRef, parents[0].call)
+			return
+		}
+		droppedParents++
+		targets = targets[1:]
+		// Ignore the first "parent" item.
+		if droppedParents > 1 {
+			if len(parents) < 2 {
+				comp.error(target.Pos, "too many %v elements", prog.ParentRef)
+				return
+			}
+			parents = parents[:len(parents)-1]
+		}
+	}
+	comp.validateFieldPathRec(fieldType, t, targets, parents, warned)
 }
 
-func (comp *compiler) checkLenTargetRec(t0, t *ast.Type, targets []*ast.Type,
+func (comp *compiler) validateFieldPathRec(t0, t *ast.Type, targets []*ast.Type,
 	parents []parentDesc, warned map[string]bool) {
 	if len(targets) == 0 {
+		if t.Ident == "offsetof" {
+			comp.error(t.Pos, "%v must refer to fields", t.Ident)
+			return
+		}
 		return
 	}
+	isValuePath := t.Ident == valueIdent
 	target := targets[0]
 	targets = targets[1:]
 	fields := parents[len(parents)-1].fields
@@ -506,6 +581,9 @@ func (comp *compiler) checkLenTargetRec(t0, t *ast.Type, targets []*ast.Type,
 			comp.error(target.Pos, "%v target %v refers to itself", t.Ident, target.Ident)
 			return
 		}
+		if !comp.checkPathField(target, t, fld) {
+			return
+		}
 		if len(targets) == 0 {
 			if t.Ident == "len" {
 				typ, desc := comp.derefPointers(fld.Type)
@@ -513,11 +591,15 @@ func (comp *compiler) checkLenTargetRec(t0, t *ast.Type, targets []*ast.Type,
 					// We can reach the same struct multiple times starting from different
 					// syscall arguments. Warn only once.
 					if !warned[parents[len(parents)-1].name] {
+						warned[parents[len(parents)-1].name] = true
 						comp.warning(target.Pos, "len target %v refer to an array with"+
 							" variable-size elements (do you mean bytesize?)",
 							target.Ident)
 					}
 				}
+			}
+			if isValuePath {
+				comp.checkExprLastField(target, fld)
 			}
 			return
 		}
@@ -532,27 +614,52 @@ func (comp *compiler) checkLenTargetRec(t0, t *ast.Type, targets []*ast.Type,
 			return
 		}
 		parents = append(parents, parentDesc{name: parentTargetName(s), fields: s.Fields})
-		comp.checkLenTargetRec(t0, t, targets, parents, warned)
+		comp.validateFieldPathRec(t0, t, targets, parents, warned)
 		return
 	}
 	for pi := len(parents) - 1; pi >= 0; pi-- {
 		parent := parents[pi]
-		if parent.name != "" && (parent.name == target.Ident || target.Ident == prog.ParentRef) ||
+		if parent.name != "" && parent.name == target.Ident ||
 			parent.name == "" && target.Ident == prog.SyscallRef {
-			if len(targets) == 0 {
-				if t.Ident == "offsetof" {
-					comp.error(target.Pos, "%v must refer to fields", t.Ident)
-					return
-				}
-			} else {
-				parents1 := make([]parentDesc, pi+1)
-				copy(parents1, parents[:pi+1])
-				comp.checkLenTargetRec(t0, t, targets, parents1, warned)
-			}
+			parents1 := make([]parentDesc, pi+1)
+			copy(parents1, parents[:pi+1])
+			comp.validateFieldPathRec(t0, t, targets, parents1, warned)
 			return
 		}
 	}
-	comp.error(target.Pos, "%v target %v does not exist", t.Ident, target.Ident)
+	warnKey := parents[len(parents)-1].name + " " + target.Pos.String()
+	if !warned[warnKey] {
+		comp.error(target.Pos, "%v target %v does not exist in %s",
+			t.Ident, target.Ident, parents[len(parents)-1].String())
+	}
+	warned[warnKey] = true
+}
+
+func (comp *compiler) checkPathField(target, t *ast.Type, field *ast.Field) bool {
+	for _, attr := range field.Attrs {
+		desc := structFieldAttrs[attr.Ident]
+		if desc == attrIf {
+			comp.error(target.Pos, "%s has conditions, so %s path cannot reference it",
+				field.Name.Name, t.Ident)
+			return false
+		}
+	}
+
+	return true
+}
+
+func (comp *compiler) checkExprLastField(target *ast.Type, field *ast.Field) {
+	_, desc := comp.derefPointers(field.Type)
+	if desc != typeInt {
+		comp.error(target.Pos, "%v does not refer to an integer", field.Name.Name)
+	}
+}
+
+func (comp *compiler) checkExprFieldType(t *ast.Type) {
+	desc := comp.getTypeDesc(t)
+	if desc == typeInt && len(t.Colon) != 0 {
+		comp.error(t.Pos, "bitfields may not have conditions")
+	}
 }
 
 func CollectUnused(desc *ast.Description, target *targets.Target, eh ast.ErrorHandler) ([]ast.Node, error) {
@@ -773,7 +880,7 @@ func (comp *compiler) checkTypeCtors(t *ast.Type, dir prog.Dir, isArg, canCreate
 		}
 		checked[key] = true
 		for _, fld := range s.Fields {
-			fldDir, fldHasDir := comp.genFieldDir(fld)
+			fldDir, fldHasDir := comp.genFieldDir(comp.parseIntAttrs(structFieldAttrs, fld, fld.Attrs))
 			if !fldHasDir {
 				fldDir = dir
 			}
@@ -1319,21 +1426,22 @@ func (comp *compiler) checkVarlen(n *ast.Struct) {
 	// Non-varlen unions can't have varlen fields.
 	// Non-packed structs can't have varlen fields in the middle.
 	if n.IsUnion {
-		attrs := comp.parseAttrs(unionAttrs, n, n.Attrs)
+		attrs := comp.parseIntAttrs(unionAttrs, n, n.Attrs)
 		if attrs[attrVarlen] != 0 {
 			return
 		}
 	} else {
-		attrs := comp.parseAttrs(structAttrs, n, n.Attrs)
+		attrs := comp.parseIntAttrs(structAttrs, n, n.Attrs)
 		if attrs[attrPacked] != 0 {
 			return
 		}
 	}
 	for i, f := range n.Fields {
+		_, exprs := comp.parseAttrs(structOrUnionFieldAttrs(n), f, f.Attrs)
 		if !n.IsUnion && i == len(n.Fields)-1 {
 			break
 		}
-		if comp.isVarlen(f.Type) {
+		if comp.isVarlen(f.Type) || !n.IsUnion && exprs[attrIf] != nil {
 			if n.IsUnion {
 				comp.error(f.Pos, "variable size field %v in non-varlen union %v",
 					f.Name.Name, n.Name.Name)

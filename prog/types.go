@@ -72,6 +72,7 @@ type Field struct {
 	Type
 	HasDirection bool
 	Direction    Dir
+	Condition    Expression
 }
 
 func (f *Field) Dir(def Dir) Dir {
@@ -79,6 +80,68 @@ func (f *Field) Dir(def Dir) Dir {
 		return f.Direction
 	}
 	return def
+}
+
+type ArgFinder func(path []string) Arg
+
+// Special case reply of ArgFinder.
+var SquashedArgFound = &DataArg{}
+
+type Expression interface {
+	fmt.GoStringer
+	ForEachValue(func(*Value))
+	Clone() Expression
+	Evaluate(ArgFinder) (uint64, bool)
+}
+
+type BinaryOperator int
+
+const (
+	OperatorCompareEq BinaryOperator = iota
+	OperatorCompareNeq
+	OperatorBinaryAnd
+)
+
+type BinaryExpression struct {
+	Operator BinaryOperator
+	Left     Expression
+	Right    Expression
+}
+
+func (bo BinaryExpression) GoString() string {
+	return fmt.Sprintf("&prog.BinaryExpression{%#v,%#v,%#v}", bo.Operator, bo.Left, bo.Right)
+}
+
+func (bo BinaryExpression) ForEachValue(cb func(*Value)) {
+	bo.Left.ForEachValue(cb)
+	bo.Right.ForEachValue(cb)
+}
+
+func (bo *BinaryExpression) Clone() Expression {
+	return &BinaryExpression{
+		Operator: bo.Operator,
+		Left:     bo.Left.Clone(),
+		Right:    bo.Right.Clone(),
+	}
+}
+
+type Value struct {
+	// If Path is empty, Value is to be used.
+	Value uint64
+	// Path to the field.
+	Path []string
+}
+
+func (v Value) GoString() string {
+	return fmt.Sprintf("&prog.Value{%#v,%#v}", v.Value, v.Path)
+}
+
+func (v *Value) ForEachValue(cb func(*Value)) {
+	cb(v)
+}
+
+func (v *Value) Clone() Expression {
+	return &Value{v.Value, append([]string{}, v.Path...)}
 }
 
 type BinaryFormat int
@@ -670,13 +733,35 @@ func (t *UnionType) String() string {
 }
 
 func (t *UnionType) DefaultArg(dir Dir) Arg {
-	f := t.Fields[0]
-	return MakeUnionArg(t, dir, f.DefaultArg(f.Dir(dir)), 0)
+	idx := t.defaultField()
+	f := t.Fields[idx]
+	return MakeUnionArg(t, dir, f.DefaultArg(f.Dir(dir)), idx)
+}
+
+func (t *UnionType) DefaultTransientArg(dir Dir) Arg {
+	unionArg := t.DefaultArg(dir).(*UnionArg)
+	unionArg.transient = true
+	return unionArg
+}
+
+func (t *UnionType) defaultField() int {
+	// If it's a conditional union, the last field will be the default value.
+	if t.isConditional() {
+		return len(t.Fields) - 1
+	}
+	// Otherwise, just take the first.
+	return 0
+}
+
+func (t *UnionType) isConditional() bool {
+	// In pkg/compiler, we ensure that either none of the fields have conditions,
+	// or all except the last one.
+	return t.Fields[0].Condition != nil
 }
 
 func (t *UnionType) isDefaultArg(arg Arg) bool {
 	a := arg.(*UnionArg)
-	return a.Index == 0 && isDefault(a.Option)
+	return a.Index == t.defaultField() && isDefault(a.Option)
 }
 
 type ConstValue struct {

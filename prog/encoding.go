@@ -457,7 +457,7 @@ func (p *parser) parseArgImpl(typ Type, dir Dir) (Arg, error) {
 		return p.parseAuto(typ, dir)
 	default:
 		return nil, fmt.Errorf("failed to parse argument at '%c' (line #%v/%v: %v)",
-			p.Char(), p.l, p.i, p.s)
+			p.Char(), p.l, p.i, highlightError(p.s, p.i))
 	}
 }
 
@@ -747,6 +747,7 @@ func (p *parser) parseArgUnion(typ Type, dir Dir) (Arg, error) {
 	var (
 		optType Type
 		optDir  Dir
+		options []string
 	)
 	index := -1
 	for i, field := range t1.Fields {
@@ -754,9 +755,11 @@ func (p *parser) parseArgUnion(typ Type, dir Dir) (Arg, error) {
 			optType, index, optDir = field.Type, i, field.Dir(dir)
 			break
 		}
+		options = append(options, fmt.Sprintf("%q", field.Name))
 	}
 	if optType == nil {
-		p.eatExcessive(true, "wrong union option")
+		p.eatExcessive(true, "wrong option %q of union %q, available options are: %s",
+			name, typ.Name(), strings.Join(options, ", "))
 		return typ.DefaultArg(dir), nil
 	}
 	var opt Arg
@@ -1261,7 +1264,8 @@ func (p *parser) Ident() string {
 
 func (p *parser) failf(msg string, args ...interface{}) {
 	if p.e == nil {
-		p.e = fmt.Errorf("%v\nline #%v:%v: %v", fmt.Sprintf(msg, args...), p.l, p.i, p.s)
+		p.e = fmt.Errorf("%v\nline #%v:%v: %v", fmt.Sprintf(msg, args...), p.l, p.i,
+			highlightError(p.s, p.i))
 	}
 }
 
@@ -1310,4 +1314,8 @@ func CallSet(data []byte) (map[string]struct{}, int, error) {
 		return nil, 0, fmt.Errorf("program does not contain any calls")
 	}
 	return calls, ncalls, nil
+}
+
+func highlightError(s string, offset int) string {
+	return s[:offset] + "<<<!!ERROR!!>>>" + s[offset:]
 }
