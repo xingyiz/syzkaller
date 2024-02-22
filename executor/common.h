@@ -628,6 +628,7 @@ static void reply_handshake();
 
 static void loop(void)
 {
+
 #if SYZ_HAVE_SETUP_LOOP
 	setup_loop();
 #endif
@@ -642,6 +643,55 @@ static void loop(void)
 	if (pipe(child_pipe))
 		fail("pipe failed");
 #endif
+
+	debug("[XY_LOG] syz-executor: pid=%ld\n", syscall(SYS_gettid));
+
+	int serialise_pid = fork();
+	if (serialise_pid == 0) {
+		prctl(PR_SET_PDEATHSIG, SIGINT);
+		debug("[XY_LOG] scx_serialise pid=%ld\n", syscall(SYS_gettid));
+		srand(time(NULL));
+		unsigned int r = (unsigned int)rand();
+		char r_str[sizeof(unsigned int) * 8 + 1];
+		sprintf(r_str, "%u", r);
+		execl("/root/scx_serialise", "/root/scx_serialise", "-s", r_str, NULL);
+		debug("[XY_LOG] scx_serialise failed to start\n");
+		return;
+	}
+
+	debug("[XY_LOG] syz-executor continue after serialise\n");
+
+	// int bpf_pid = fork();
+	// if (bpf_pid == 0) {
+	// 	prctl(PR_SET_PDEATHSIG, SIGINT);
+	// 	debug(stderr, "[XY_LOG] bpf starting...\n");
+	// 	execl("/root/read-print.sh", "/root/read-print.sh", NULL);
+	// 	debug(stderr, "[XY_LOG] bpf failed to start\n");
+	// 	return 0;
+	// }
+
+	// fprintf(stderr, "[XY_LOG] syz-executor continue after bpf\n");
+
+	int sysrq_pid = fork();
+	if (sysrq_pid == 0) {
+		prctl(PR_SET_PDEATHSIG, SIGINT);
+		debug("[XY_LOG] sysrq starting...\n");
+		// execl("/bin/echo", "/bin/echo", "t > /proc/s", NULL);
+		execl("/bin/bash", "/bin/bash", "-c", "echo t > /proc/sysrq-trigger", NULL);
+		debug("[XY_LOG] sysrq failed to start\n");
+		return;
+	}
+
+	debug("[XY_LOG_COMMON] setting scheduler and affinity\n");
+	struct sched_param param = {.sched_priority = 0};
+	sched_setscheduler(getpid(), 7, &param);
+
+	cpu_set_t cpuset;
+	CPU_ZERO(&cpuset);
+	CPU_SET(0, &cpuset);
+	if (sched_setaffinity(0, sizeof(cpuset), &cpuset))
+		fail("failed to set affinity");
+
 	int iter = 0;
 #if SYZ_REPEAT_TIMES
 	for (; iter < /*{{{REPEAT_TIMES}}}*/; iter++) {
@@ -661,15 +711,6 @@ static void loop(void)
 #if SYZ_EXECUTOR
 		receive_execute();
 #endif
-		debug("[XY_LOG_COMMON] setting scheduler and affinity\n");
-		struct sched_param param = {.sched_priority = 0};
-		sched_setscheduler(getpid(), 7, &param);
-
-		cpu_set_t cpuset;
-		CPU_ZERO(&cpuset);
-		CPU_SET(0, &cpuset);
-		if (sched_setaffinity(0, sizeof(cpuset), &cpuset))
-			fail("failed to set affinity");
 
 		int pid = fork();
 		if (pid < 0)

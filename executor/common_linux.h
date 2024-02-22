@@ -4093,48 +4093,6 @@ static int do_sandbox_none(void)
 	initialize_wifi_devices();
 #endif
 	setup_binderfs();
-
-	fprintf(stderr, "[XY_LOG] syz-executor: pid=%d\n", getpid());
-
-	int serialise_pid = fork();
-	if (serialise_pid == 0) {
-		prctl(PR_SET_PDEATHSIG, SIGINT);
-		fprintf(stderr, "[XY_LOG] scx_serialise starting...\n");
-		srand(time(NULL));
-		unsigned int r = (unsigned int)rand();
-		char r_str[sizeof(unsigned int) * 8 + 1];
-		sprintf(r_str, "%u", r);
-		execl("/root/scx_serialise", "/root/scx_serialise", "-s", r_str, NULL);
-		fprintf(stderr, "[XY_LOG] scx_serialise failed to start\n");
-		return 0;
-	}
-
-	fprintf(stderr, "[XY_LOG] syz-executor continue after serialise\n");
-	sleep(3); // give time for bpf to load
-
-	int bpf_pid = fork();
-	if (bpf_pid == 0) {
-		prctl(PR_SET_PDEATHSIG, SIGINT);
-		fprintf(stderr, "[XY_LOG] bpf starting...\n");
-		execl("/root/read-print.sh", "/root/read-print.sh", NULL);
-		fprintf(stderr, "[XY_LOG] bpf failed to start\n");
-		return 0;
-	}
-
-	fprintf(stderr, "[XY_LOG] syz-executor continue after bpf\n");
-
-	int sysrq_pid = fork();
-	if (sysrq_pid == 0) {
-		prctl(PR_SET_PDEATHSIG, SIGINT);
-		fprintf(stderr, "[XY_LOG] sysrq starting...\n");
-		// execl("/bin/echo", "/bin/echo", "t > /proc/s", NULL);
-		execl("/bin/bash", "/bin/bash", "-c", "echo t > /proc/sysrq-trigger", NULL);
-		fprintf(stderr, "[XY_LOG] sysrq failed to start\n");
-		return 0;
-	}
-
-	fprintf(stderr, "[XY_LOG] syz-executor continue after sysrq\n");
-
 	loop();
 	doexit(1);
 }
