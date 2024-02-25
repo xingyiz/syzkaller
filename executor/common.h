@@ -672,15 +672,15 @@ static void loop(void)
 
 	// fprintf(stderr, "[XY_LOG] syz-executor continue after bpf\n");
 
-	int sysrq_pid = fork();
-	if (sysrq_pid == 0) {
-		prctl(PR_SET_PDEATHSIG, SIGINT);
-		debug("[XY_LOG] sysrq starting...\n");
-		// execl("/bin/echo", "/bin/echo", "t > /proc/s", NULL);
-		execl("/bin/bash", "/bin/bash", "-c", "echo t > /proc/sysrq-trigger", NULL);
-		debug("[XY_LOG] sysrq failed to start\n");
-		return;
-	}
+	// int sysrq_pid = fork();
+	// if (sysrq_pid == 0) {
+	// 	prctl(PR_SET_PDEATHSIG, SIGINT);
+	// 	debug("[XY_LOG] sysrq starting...\n");
+	// 	// execl("/bin/echo", "/bin/echo", "t > /proc/s", NULL);
+	// 	execl("/bin/bash", "/bin/bash", "-c", "echo t > /proc/sysrq-trigger", NULL);
+	// 	debug("[XY_LOG] sysrq failed to start\n");
+	// 	return;
+	// }
 
 	debug("[XY_LOG_COMMON] setting scheduler and affinity\n");
 	struct sched_param param = {.sched_priority = 0};
