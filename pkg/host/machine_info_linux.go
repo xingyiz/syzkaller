@@ -21,7 +21,6 @@ func init() {
 	}
 	machineModulesInfo = getModulesInfo
 	machineGlobsInfo = getGlobsInfo
-	machineParseModules = parseModules
 }
 
 func readCPUInfo(buffer *bytes.Buffer) error {
@@ -125,27 +124,46 @@ func readKVMInfo(buffer *bytes.Buffer) error {
 	return nil
 }
 
-func getModulesInfo() ([]KernelModule, error) {
-	modulesText, _ := os.ReadFile("/proc/modules")
-	return parseModules(modulesText)
+func getModuleTextAddr(moduleName string) (uint64, error) {
+	addrPath := filepath.Join("/sys", "module", moduleName, "sections", ".text")
+	addrContent, err := os.ReadFile(addrPath)
+	if err != nil {
+		return 0, fmt.Errorf("could not read module .text address file: %w", err)
+	}
+	addrString := strings.TrimSpace(string(addrContent))
+	addr, err := strconv.ParseUint(addrString, 0, 64)
+	if err != nil {
+		return 0, fmt.Errorf("address parsing error in %v: %w", moduleName, err)
+	}
+	return addr, nil
 }
 
-func parseModules(modulesText []byte) ([]KernelModule, error) {
+func getModulesInfo() ([]KernelModule, error) {
 	var modules []KernelModule
 	re := regexp.MustCompile(`(\w+) ([0-9]+) .*(0[x|X][a-fA-F0-9]+)[^\n]*`)
+	modulesText, _ := os.ReadFile("/proc/modules")
 	for _, m := range re.FindAllSubmatch(modulesText, -1) {
-		addr, err := strconv.ParseUint(string(m[3]), 0, 64)
+		name := string(m[1])
+		modAddr, err := strconv.ParseUint(string(m[3]), 0, 64)
 		if err != nil {
+			// /proc/modules is broken, bail out.
 			return nil, fmt.Errorf("address parsing error in /proc/modules: %w", err)
 		}
-		size, err := strconv.ParseUint(string(m[2]), 0, 64)
+		textAddr, err := getModuleTextAddr(name)
 		if err != nil {
+			// Module address unavailable, .text is probably 0. Skip this module.
+			continue
+		}
+		modSize, err := strconv.ParseUint(string(m[2]), 0, 64)
+		if err != nil {
+			// /proc/modules is broken, bail out.
 			return nil, fmt.Errorf("module size parsing error in /proc/modules: %w", err)
 		}
+		offset := modAddr - textAddr
 		modules = append(modules, KernelModule{
 			Name: string(m[1]),
-			Addr: addr,
-			Size: size,
+			Addr: textAddr,
+			Size: modSize - offset,
 		})
 	}
 	return modules, nil
