@@ -256,24 +256,32 @@ const (
 )
 
 func (mgr *Manager) httpCover(w http.ResponseWriter, r *http.Request) {
-	mgr.httpCoverCover(w, r, DoHTML, true)
+	if !mgr.cfg.Cover {
+		mgr.httpCoverFallback(w, r)
+		return
+	}
+	mgr.httpCoverCover(w, r, DoHTML)
 }
 
 func (mgr *Manager) httpSubsystemCover(w http.ResponseWriter, r *http.Request) {
-	mgr.httpCoverCover(w, r, DoHTMLTable, true)
+	if !mgr.cfg.Cover {
+		mgr.httpCoverFallback(w, r)
+		return
+	}
+	mgr.httpCoverCover(w, r, DoHTMLTable)
 }
 
 func (mgr *Manager) httpModuleCover(w http.ResponseWriter, r *http.Request) {
-	mgr.httpCoverCover(w, r, DoModuleCover, true)
+	if !mgr.cfg.Cover {
+		mgr.httpCoverFallback(w, r)
+		return
+	}
+	mgr.httpCoverCover(w, r, DoModuleCover)
 }
 
-func (mgr *Manager) httpCoverCover(w http.ResponseWriter, r *http.Request, funcFlag int, isHTMLCover bool) {
+func (mgr *Manager) httpCoverCover(w http.ResponseWriter, r *http.Request, funcFlag int) {
 	if !mgr.cfg.Cover {
-		if isHTMLCover {
-			mgr.httpCoverFallback(w, r)
-		} else {
-			http.Error(w, "coverage is not enabled", http.StatusInternalServerError)
-		}
+		http.Error(w, "coverage is not enabled", http.StatusInternalServerError)
 		return
 	}
 
@@ -335,42 +343,32 @@ func (mgr *Manager) httpCoverCover(w http.ResponseWriter, r *http.Request, funcF
 		coverFilter = mgr.coverFilter
 	}
 
-	if funcFlag == DoRawCoverFiles {
-		if err := rg.DoRawCoverFiles(w, progs, coverFilter); err != nil {
-			http.Error(w, fmt.Sprintf("failed to generate coverage profile: %v", err), http.StatusInternalServerError)
-			return
-		}
-		runtime.GC()
-		return
-	} else if funcFlag == DoRawCover {
-		rg.DoRawCover(w, progs, coverFilter)
-		return
-	} else if funcFlag == DoFilterPCs {
-		rg.DoFilterPCs(w, progs, coverFilter)
-		return
-	}
-
-	do := rg.DoHTML
-
-	if funcFlag == DoHTMLTable {
-		do = rg.DoHTMLTable
-	} else if funcFlag == DoModuleCover {
-		do = rg.DoModuleCover
-	} else if funcFlag == DoCSV {
-		do = rg.DoCSV
-	} else if funcFlag == DoCSVFiles {
-		do = rg.DoCSVFiles
-	}
-
-	debug := r.FormValue("debug") != ""
-
 	params := cover.CoverHandlerParams{
 		Progs:       progs,
 		CoverFilter: coverFilter,
-		Debug:       debug,
+		Debug:       r.FormValue("debug") != "",
 	}
 
-	if err := do(w, params); err != nil {
+	type handlerFuncType func(w io.Writer, params cover.CoverHandlerParams) error
+	flagToFunc := map[int]struct {
+		Do          handlerFuncType
+		isPlainText bool
+	}{
+		DoHTML:          {rg.DoHTML, false},
+		DoHTMLTable:     {rg.DoHTMLTable, false},
+		DoModuleCover:   {rg.DoModuleCover, false},
+		DoCSV:           {rg.DoCSV, true},
+		DoCSVFiles:      {rg.DoCSVFiles, true},
+		DoRawCoverFiles: {rg.DoRawCoverFiles, true},
+		DoRawCover:      {rg.DoRawCover, true},
+		DoFilterPCs:     {rg.DoFilterPCs, true},
+	}
+
+	if flagToFunc[funcFlag].isPlainText {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+	}
+
+	if err := flagToFunc[funcFlag].Do(w, params); err != nil {
 		http.Error(w, fmt.Sprintf("failed to generate coverage profile: %v", err), http.StatusInternalServerError)
 		return
 	}
@@ -411,11 +409,11 @@ func (mgr *Manager) httpCoverFallback(w http.ResponseWriter, r *http.Request) {
 }
 
 func (mgr *Manager) httpFuncCover(w http.ResponseWriter, r *http.Request) {
-	mgr.httpCoverCover(w, r, DoCSV, false)
+	mgr.httpCoverCover(w, r, DoCSV)
 }
 
 func (mgr *Manager) httpFileCover(w http.ResponseWriter, r *http.Request) {
-	mgr.httpCoverCover(w, r, DoCSVFiles, false)
+	mgr.httpCoverCover(w, r, DoCSVFiles)
 }
 
 func (mgr *Manager) httpPrio(w http.ResponseWriter, r *http.Request) {
@@ -579,11 +577,11 @@ func (mgr *Manager) httpReport(w http.ResponseWriter, r *http.Request) {
 }
 
 func (mgr *Manager) httpRawCover(w http.ResponseWriter, r *http.Request) {
-	mgr.httpCoverCover(w, r, DoRawCover, false)
+	mgr.httpCoverCover(w, r, DoRawCover)
 }
 
 func (mgr *Manager) httpRawCoverFiles(w http.ResponseWriter, r *http.Request) {
-	mgr.httpCoverCover(w, r, DoRawCoverFiles, false)
+	mgr.httpCoverCover(w, r, DoRawCoverFiles)
 }
 
 func (mgr *Manager) httpFilterPCs(w http.ResponseWriter, r *http.Request) {
@@ -591,7 +589,7 @@ func (mgr *Manager) httpFilterPCs(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "cover is not filtered in config.\n")
 		return
 	}
-	mgr.httpCoverCover(w, r, DoFilterPCs, false)
+	mgr.httpCoverCover(w, r, DoFilterPCs)
 }
 
 func (mgr *Manager) collectCrashes(workdir string) ([]*UICrashType, error) {
