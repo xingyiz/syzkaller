@@ -27,11 +27,9 @@ endef
 
 RED := $(shell tput setaf 1)
 RESET := $(shell tput sgr0)
-
-ifndef SILENCE_SYZ_ENV_HINT
+ifndef SYZ_ENV
 $(warning $(RED)run command via tools/syz-env for best compatibility, see:$(RESET))
 $(warning $(RED)https://github.com/google/syzkaller/blob/master/docs/contributing.md#using-syz-env$(RESET))
-export SILENCE_SYZ_ENV_HINT=1
 endif
 
 ENV := $(subst \n,$(newline),$(shell CI=$(CI)\
@@ -116,7 +114,7 @@ endif
 	check_copyright check_language check_whitespace check_links check_diff check_commits check_shebang \
 	presubmit presubmit_aux presubmit_build presubmit_arch_linux presubmit_arch_freebsd \
 	presubmit_arch_netbsd presubmit_arch_openbsd presubmit_arch_darwin presubmit_arch_windows \
-	presubmit_arch_executor presubmit_dashboard presubmit_race presubmit_old
+	presubmit_arch_executor presubmit_dashboard presubmit_race presubmit_race_dashboard presubmit_old
 
 all: host target
 host: manager runtest repro mutate prog2c db upgrade
@@ -310,6 +308,7 @@ presubmit:
 	$(MAKE) presubmit_arch_windows
 	$(MAKE) presubmit_arch_executor
 	$(MAKE) presubmit_race
+	$(MAKE) presubmit_race_dashboard
 
 presubmit_aux:
 	$(MAKE) generate
@@ -320,7 +319,7 @@ presubmit_build: descriptions
 	# This does not check build of test files, but running go test takes too long (even for building).
 	$(GO) build ./...
 	$(MAKE) lint
-	SYZ_SKIP_DASHBOARD=1 $(MAKE) test
+	SYZ_SKIP_DEV_APPSERVER_TESTS=1 $(MAKE) test
 
 presubmit_arch_linux: descriptions
 	env HOSTOS=linux HOSTARCH=amd64 $(MAKE) host
@@ -374,7 +373,13 @@ presubmit_dashboard: descriptions
 presubmit_race: descriptions
 	# -race requires cgo
 	env CGO_ENABLED=1 $(GO) test -race; if test $$? -ne 2; then \
-	env CGO_ENABLED=1 $(GO) test -race -short -vet=off -bench=.* -benchtime=.2s ./... ;\
+	env CGO_ENABLED=1 SYZ_SKIP_DEV_APPSERVER_TESTS=1 $(GO) test -race -short -vet=off -bench=.* -benchtime=.2s ./... ;\
+	fi
+
+presubmit_race_dashboard: descriptions
+	# -race requires cgo
+	env CGO_ENABLED=1 $(GO) test -race; if test $$? -ne 2; then \
+	env CGO_ENABLED=1 $(GO) test -race -short -vet=off -bench=.* -benchtime=.2s ./dashboard/app/... ;\
 	fi
 
 presubmit_old: descriptions
