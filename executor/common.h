@@ -682,15 +682,9 @@ static void loop(void)
 	// 	return;
 	// }
 
-	debug("[XY_LOG_COMMON] setting scheduler and affinity\n");
+	debug("[XY_LOG_COMMON] setting scheduler\n");
 	struct sched_param param = {.sched_priority = 0};
 	sched_setscheduler(getpid(), 7, &param);
-
-	cpu_set_t cpuset;
-	CPU_ZERO(&cpuset);
-	CPU_SET(0, &cpuset);
-	if (sched_setaffinity(0, sizeof(cpuset), &cpuset))
-		fail("failed to set affinity");
 
 	int iter = 0;
 #if SYZ_REPEAT_TIMES

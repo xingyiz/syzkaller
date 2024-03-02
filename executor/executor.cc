@@ -1242,15 +1242,35 @@ void thread_mmap_cover(thread_t* th)
 	cover_protect(&th->cov);
 }
 
+int stick_this_thread_to_core(int core_id)
+{
+	int num_cores = sysconf(_SC_NPROCESSORS_ONLN);
+	if (core_id < 0 || core_id >= num_cores)
+		return EINVAL;
+
+	cpu_set_t cpuset;
+	CPU_ZERO(&cpuset);
+	CPU_SET(core_id, &cpuset);
+
+	pthread_t current_thread = pthread_self();
+	return pthread_setaffinity_np(current_thread, sizeof(cpu_set_t), &cpuset);
+}
+
 void* worker_thread(void* arg)
 {
-	pid_t tid = syscall(__NR_gettid);
+	thread_t* th = (thread_t*)arg;
+	current_thread = th;
+
+	int id = th->id;
+	int core_id = id % sysconf(_SC_NPROCESSORS_ONLN);
+	if (stick_this_thread_to_core(core_id) != 0)
+		fail("stick_this_thread_to_core failed");
+
+	pid_t tid = syscall(SYS_gettid);
 	int policy = sched_getscheduler(tid);
 	int cpu = sched_getcpu();
 	fprintf(stderr, "[XY_LOG] thread %d: start (policy=%d cpu=%d)\n", tid, policy, cpu);
 
-	thread_t* th = (thread_t*)arg;
-	current_thread = th;
 	if (cover_collection_required())
 		cover_enable(&th->cov, flag_comparisons, false);
 	for (;;) {

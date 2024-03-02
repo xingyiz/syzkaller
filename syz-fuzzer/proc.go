@@ -293,22 +293,22 @@ func (proc *Proc) executeAndCollide(execOpts *ipc.ExecOpts, p *prog.Prog, flags 
 		// We cannot collide syscalls without being in the threaded mode.
 		return
 	}
-	const collideIterations = 5
+	const collideIterations = 10
 	for i := 0; i < collideIterations; i++ {
 		proc.executeRaw(proc.execOptsCollide, proc.randomCollide(p), StatCollide)
 	}
 }
 
 func (proc *Proc) randomCollide(origP *prog.Prog) *prog.Prog {
-	if proc.rnd.Intn(5) == 0 {
-		// Old-style collide with a 20% probability.
+	if proc.rnd.Intn(3) == 0 {
+		// Old-style collide with a 20% probability. Updated to 33%.
 		p, err := prog.DoubleExecCollide(origP, proc.rnd)
 		if err == nil {
 			return p
 		}
 	}
-	if proc.rnd.Intn(4) == 0 {
-		// Duplicate random calls with a 20% probability (25% * 80%).
+	if proc.rnd.Intn(2) == 0 {
+		// Duplicate random calls with a 20% probability (25% * 80%). Updated to 50%.
 		p, err := prog.DupCallCollide(origP, proc.rnd)
 		if err == nil {
 			return p
