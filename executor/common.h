@@ -664,10 +664,10 @@ static void loop(void)
 	// int bpf_pid = fork();
 	// if (bpf_pid == 0) {
 	// 	prctl(PR_SET_PDEATHSIG, SIGINT);
-	// 	debug(stderr, "[XY_LOG] bpf starting...\n");
+	// 	debug("[XY_LOG] bpf starting...\n");
 	// 	execl("/root/read-print.sh", "/root/read-print.sh", NULL);
-	// 	debug(stderr, "[XY_LOG] bpf failed to start\n");
-	// 	return 0;
+	// 	debug("[XY_LOG] bpf failed to start\n");
+	// 	return;
 	// }
 
 	// fprintf(stderr, "[XY_LOG] syz-executor continue after bpf\n");
