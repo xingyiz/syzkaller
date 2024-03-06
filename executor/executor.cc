@@ -1258,8 +1258,8 @@ void thread_mmap_cover(thread_t* th)
 
 void* worker_thread(void* arg)
 {
-	// thread_t* th = (thread_t*)arg;
-	// current_thread = th;
+	thread_t* th = (thread_t*)arg;
+	current_thread = th;
 
 	// int id = th->id;
 	// int core_id = id % sysconf(_SC_NPROCESSORS_ONLN);
