@@ -79,7 +79,7 @@ func (proc *Proc) loop() {
 			default:
 				log.SyzFatalf("unknown work type: %#v", item)
 			}
-			// continue
+			continue
 		}
 
 		ct := proc.fuzzer.choiceTable
