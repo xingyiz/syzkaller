@@ -293,6 +293,13 @@ func (proc *Proc) executeAndCollide(execOpts *ipc.ExecOpts, p *prog.Prog, flags 
 		// We cannot collide syscalls without being in the threaded mode.
 		return
 	}
+
+	// If program has less than 5 syscalls, don't collide.
+	if len(p.Calls) < 5 {
+		return
+	}
+
+	// Collide the program.
 	const collideIterations = 100
 	for i := 0; i < collideIterations; i++ {
 		proc.executeRaw(proc.execOptsCollide, proc.randomCollide(p), StatCollide)
@@ -307,8 +314,8 @@ func (proc *Proc) randomCollide(origP *prog.Prog) *prog.Prog {
 			return p
 		}
 	}
-	if proc.rnd.Intn(2) == 0 {
-		// Duplicate random calls with a 20% probability (25% * 80%). Updated to 50%.
+	if proc.rnd.Intn(3) == 0 {
+		// Duplicate random calls with a 20% probability (25% * 80%). Updated to 33%.
 		p, err := prog.DupCallCollide(origP, proc.rnd)
 		if err == nil {
 			return p
