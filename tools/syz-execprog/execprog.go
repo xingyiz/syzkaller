@@ -31,15 +31,16 @@ import (
 )
 
 var (
-	flagOS        = flag.String("os", runtime.GOOS, "target os")
-	flagArch      = flag.String("arch", runtime.GOARCH, "target arch")
-	flagCoverFile = flag.String("coverfile", "", "write coverage to the file")
-	flagRepeat    = flag.Int("repeat", 1, "repeat execution that many times (0 for infinite loop)")
-	flagProcs     = flag.Int("procs", 2*runtime.NumCPU(), "number of parallel processes to execute programs")
-	flagOutput    = flag.Bool("output", false, "write programs and results to stdout")
-	flagHints     = flag.Bool("hints", false, "do a hints-generation run")
-	flagEnable    = flag.String("enable", "none", "enable only listed additional features")
-	flagDisable   = flag.String("disable", "none", "enable all additional features except listed")
+	flagOS         = flag.String("os", runtime.GOOS, "target os")
+	flagArch       = flag.String("arch", runtime.GOARCH, "target arch")
+	flagCoverFile  = flag.String("coverfile", "", "write coverage to the file")
+	flagTimingFile = flag.String("timingfile", "", "write timing information to the file")
+	flagRepeat     = flag.Int("repeat", 1, "repeat execution that many times (0 for infinite loop)")
+	flagProcs      = flag.Int("procs", 2*runtime.NumCPU(), "number of parallel processes to execute programs")
+	flagOutput     = flag.Bool("output", false, "write programs and results to stdout")
+	flagHints      = flag.Bool("hints", false, "do a hints-generation run")
+	flagEnable     = flag.String("enable", "none", "enable only listed additional features")
+	flagDisable    = flag.String("disable", "none", "enable all additional features except listed")
 	// The following flag is only kept to let syzkaller remain compatible with older execprog versions.
 	// In order to test incoming patches or perform bug bisection, syz-ci must use the exact syzkaller
 	// version that detected the bug (as descriptions and syntax could've already been changed), and
@@ -178,7 +179,9 @@ func (ctx *Context) execute(pid int, env *ipc.Env, p *prog.Prog, progIndex int) 
 	}
 	// This mimics the syz-fuzzer logic. This is important for reproduction.
 	for try := 0; ; try++ {
+		start := time.Now()
 		output, info, hanged, err := env.Exec(callOpts, p)
+		end := time.Now()
 		if err != nil && err != prog.ErrExecBufferTooSmall {
 			if try > 10 {
 				log.Fatalf("executor failed %v times: %v\n%s", try, err, output)
@@ -193,6 +196,7 @@ func (ctx *Context) execute(pid int, env *ipc.Env, p *prog.Prog, progIndex int) 
 		}
 		if info != nil {
 			ctx.printCallResults(info)
+			log.Logf(0, "TIME TAKEN: %v", end.Sub(start))
 			if *flagHints {
 				ctx.printHints(p, info)
 			}
@@ -200,6 +204,20 @@ func (ctx *Context) execute(pid int, env *ipc.Env, p *prog.Prog, progIndex int) 
 				covFile := fmt.Sprintf("%s_prog%d", *flagCoverFile, progIndex)
 				ctx.dumpCoverage(covFile, info)
 			}
+			if *flagTimingFile != "" {
+				timingFile := *flagTimingFile
+				// Create file if doesnt exist, append to it otherwise
+				f, err := os.OpenFile(timingFile, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+				if err != nil {
+					log.Fatalf("failed to open timing file: %v", err)
+				}
+				defer f.Close()
+				_, err = f.WriteString(fmt.Sprintf("%v\n", end.Sub(start)))
+				if err != nil {
+					log.Fatalf("failed to write timing file: %v", err)
+				}
+			}
+
 		} else {
 			log.Logf(1, "RESULT: no calls executed")
 		}
