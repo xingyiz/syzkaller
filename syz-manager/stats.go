@@ -32,6 +32,8 @@ type Stats struct {
 	corpusCoverFiltered Stat
 	corpusSignal        Stat
 	maxSignal           Stat
+	seqExeclTotal       Stat
+	concurrExeclTotal   Stat
 
 	mu         sync.Mutex
 	namedStats map[string]uint64
@@ -101,6 +103,10 @@ func (stats *Stats) mergeNamed(named map[string]uint64) {
 		switch k {
 		case "exec total":
 			stats.execTotal.add(int(v))
+		case "concurr exec total":
+			stats.concurrExeclTotal.add(int(v))
+		case "seq exec total":
+			stats.seqExeclTotal.add(int(v))
 		default:
 			stats.namedStats[k] += v
 		}

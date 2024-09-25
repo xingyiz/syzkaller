@@ -4,17 +4,19 @@
 package fuzzer
 
 const (
-	statGenerate       = "exec gen"
-	statFuzz           = "exec fuzz"
-	statCandidate      = "exec candidate"
-	statTriage         = "exec triage"
-	statMinimize       = "exec minimize"
-	statSmash          = "exec smash"
-	statHint           = "exec hints"
-	statSeed           = "exec seeds"
-	statCollide        = "exec collide"
-	statExecTotal      = "exec total"
-	statBufferTooSmall = "buffer too small"
+	statGenerate         = "exec gen"
+	statFuzz             = "exec fuzz"
+	statCandidate        = "exec candidate"
+	statTriage           = "exec triage"
+	statMinimize         = "exec minimize"
+	statSmash            = "exec smash"
+	statHint             = "exec hints"
+	statSeed             = "exec seeds"
+	statCollide          = "exec collide"
+	statExecTotal        = "exec total"
+	statConcurrExecTotal = "concurr exec total"
+	statSeqExecTotal     = "seq exec total"
+	statBufferTooSmall   = "buffer too small"
 )
 
 func (fuzzer *Fuzzer) GrabStats() map[string]uint64 {

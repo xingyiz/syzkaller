@@ -426,6 +426,8 @@ func (tool *FuzzerTool) grabStats() map[string]uint64 {
 	for _, proc := range tool.procs {
 		stats["exec total"] += atomic.SwapUint64(&proc.env.StatExecs, 0)
 		stats["executor restarts"] += atomic.SwapUint64(&proc.env.StatRestarts, 0)
+		stats["concurr exec total"] += atomic.SwapUint64(&proc.env.StatConcurrExecs, 0)
+		stats["seq exec total"] += atomic.SwapUint64(&proc.env.StatSeqExecs, 0)
 	}
 	stats["buffer too small"] = atomic.SwapUint64(&tool.bufferTooSmall, 0)
 	return stats

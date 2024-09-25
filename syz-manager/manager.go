@@ -247,6 +247,8 @@ func RunManager(cfg *mgrconfig.Config) {
 			}
 			mgr.fuzzingTime += diff * time.Duration(atomic.LoadUint32(&mgr.numFuzzing))
 			executed := mgr.stats.execTotal.get()
+			seqExecuted := mgr.stats.seqExeclTotal.get()
+			concurrExecuted := mgr.stats.concurrExeclTotal.get()
 			crashes := mgr.stats.crashes.get()
 			corpusCover := mgr.stats.corpusCover.get()
 			corpusSignal := mgr.stats.corpusSignal.get()
@@ -256,8 +258,8 @@ func RunManager(cfg *mgrconfig.Config) {
 			numReproducing := atomic.LoadUint32(&mgr.numReproducing)
 			numFuzzing := atomic.LoadUint32(&mgr.numFuzzing)
 
-			log.Logf(0, "VMs %v, executed %v, cover %v, signal %v/%v, crashes %v, repro %v, triageQLen %v",
-				numFuzzing, executed, corpusCover, corpusSignal, maxSignal, crashes, numReproducing, triageQLen)
+			log.Logf(0, "VMs %v, executed %v, sequential executed %v, concurrent executed %v, cover %v, signal %v/%v, crashes %v, repro %v, triageQLen %v",
+				numFuzzing, executed, seqExecuted, concurrExecuted, corpusCover, corpusSignal, maxSignal, crashes, numReproducing, triageQLen)
 		}
 	}()
 

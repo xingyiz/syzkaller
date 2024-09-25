@@ -90,8 +90,9 @@ type CallInfo struct {
 	Signal []uint32 // feedback signal, filled if FlagSignal is set
 	Cover  []uint32 // per-call coverage, filled if FlagSignal is set and cover == true,
 	// if dedup == false, then cov effectively contains a trace, otherwise duplicates are removed
-	Comps prog.CompMap // per-call comparison operands
-	Errno int          // call errno (0 if the call was successful)
+	Comps     prog.CompMap // per-call comparison operands
+	Errno     int          // call errno (0 if the call was successful)
+	Thread_id int
 }
 
 type ProgInfo struct {
@@ -113,6 +114,9 @@ type Env struct {
 
 	StatExecs    uint64
 	StatRestarts uint64
+
+	StatSeqExecs     uint64
+	StatConcurrExecs uint64
 }
 
 const (
@@ -247,6 +251,14 @@ func (env *Env) Close() error {
 
 var rateLimit = time.NewTicker(1 * time.Second)
 
+func find_concurrent_threads(info *ProgInfo) int {
+	set := make(map[int]bool)
+	for _, c := range info.Calls {
+		set[c.Thread_id] = true
+	}
+	return len(set)
+}
+
 // Exec starts executor binary to execute program p and returns information about the execution:
 // output: process output
 // info: per-call info
@@ -283,6 +295,14 @@ func (env *Env) Exec(opts *ExecOpts, p *prog.Prog) (output []byte, info *ProgInf
 	}
 
 	info, err0 = env.parseOutput(p, opts)
+	if info != nil {
+		num_thread := find_concurrent_threads(info)
+		if num_thread > 1 {
+			atomic.AddUint64(&env.StatConcurrExecs, 1)
+		} else {
+			atomic.AddUint64(&env.StatSeqExecs, 1)
+		}
+	}
 	if info != nil && env.config.Flags&FlagSignal == 0 {
 		addFallbackSignal(p, info)
 	}
@@ -370,6 +390,7 @@ func (env *Env) parseOutput(p *prog.Prog, opts *ExecOpts) (*ProgInfo, error) {
 				return nil, fmt.Errorf("duplicate reply for call %v/%v/%v", i, reply.index, reply.num)
 			}
 			inf.Errno = int(reply.errno)
+			inf.Thread_id = int(reply.thread_id)
 			inf.Flags = CallFlags(reply.flags)
 		} else {
 			extraParts = append(extraParts, CallInfo{})
@@ -561,6 +582,7 @@ type callReply struct {
 	index      uint32 // call index in the program
 	num        uint32 // syscall number (for cross-checking)
 	errno      uint32
+	thread_id  uint32
 	flags      uint32 // see CallFlags
 	signalSize uint32
 	coverSize  uint32
