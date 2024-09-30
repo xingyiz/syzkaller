@@ -10,6 +10,7 @@
 #include <sys/prctl.h>
 #include <sys/syscall.h>
 #include <unistd.h>
+#include <sched.h>
 
 const unsigned long KCOV_TRACE_PC = 0;
 const unsigned long KCOV_TRACE_CMP = 1;
@@ -35,6 +36,9 @@ struct kcov_remote_arg {
 
 #define KCOV_SUBSYSTEM_MASK (0xffull << 56)
 #define KCOV_INSTANCE_MASK (0xffffffffull)
+
+#define SCHED_NORMAL 0
+#define SCHED_EXT    7
 
 static bool is_gvisor;
 
@@ -67,6 +71,16 @@ static void os_init(int argc, char** argv, char* data, size_t data_size)
 	got = mmap(data + data_size, SYZ_PAGE_SIZE, PROT_NONE, MAP_ANON | MAP_PRIVATE | MAP_FIXED, -1, 0);
 	if (data + data_size != got)
 		failmsg("mmap of right data PROT_NONE page failed", "want %p, got %p", data + data_size, got);
+}
+
+static void set_sched_scheduler() {
+	struct sched_param param = {.sched_priority = 0};
+	sched_setscheduler(getpid(), SCHED_EXT, &param);
+}
+
+static void unset_sched_scheduler() {
+	struct sched_param param = {.sched_priority = 0};
+	sched_setscheduler(getpid(), SCHED_NORMAL, &param);
 }
 
 static intptr_t execute_syscall(const call_t* c, intptr_t a[kMaxArgs])
