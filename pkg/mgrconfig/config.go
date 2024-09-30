@@ -41,6 +41,8 @@ type Config struct {
 	// Directory with kernel object files (e.g. `vmlinux` for linux)
 	// (used for report symbolization, coverage reports and in tree modules finding, optional).
 	KernelObj string `json:"kernel_obj"`
+	// Location of thread scheduler (if not set, use default scheduling strategy)
+	SchedulerBin string `json:"scheduler_bin,omitempty"`
 	// Directories with out-of-tree kernel module object files for coverage report generation (optional).
 	// KernelObj is also scanned for in-tree kernel modules and does not need to be duplicated here.
 	// Note: the modules need to be unstripped and contain debug info.

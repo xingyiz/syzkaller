@@ -178,6 +178,12 @@ func RunManager(cfg *mgrconfig.Config) {
 		}
 	}
 
+	if cfg.SchedulerBin == "" {
+		log.Logf(0, "Using thread scheduler: default")
+	} else {
+		log.Logf(0, "Using thread scheduler: %v", cfg.SchedulerBin)
+	}
+
 	crashdir := filepath.Join(cfg.Workdir, "crashes")
 	osutil.MkdirAll(crashdir)
 
@@ -817,6 +823,14 @@ func (mgr *Manager) runInstanceInner(index int, instanceName string) (*report.Re
 		}
 	}
 
+	schedulerBin := mgr.cfg.SchedulerBin
+	if schedulerBin != "" {
+		schedulerBin, err = inst.Copy(mgr.cfg.SchedulerBin)
+		if err != nil {
+			return nil, nil, fmt.Errorf("fail to copy scheduler binary: %w", err)
+		}
+	}
+
 	fuzzerV := 0
 	procs := mgr.cfg.Procs
 	if *flagDebug {
@@ -855,6 +869,14 @@ func (mgr *Manager) runInstanceInner(index int, instanceName string) (*report.Re
 	outc, errc, err := inst.Run(mgr.cfg.Timeouts.VMRunningTime, mgr.vmStop, cmd)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to run fuzzer: %w", err)
+	}
+
+	if schedulerBin != "" {
+		schedCmd := fmt.Sprintf("%v", schedulerBin)
+		_, errc, err = inst.Run(mgr.cfg.Timeouts.VMRunningTime, nil, schedCmd)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to run scheduler: %w", err)
+		}
 	}
 
 	var vmInfo []byte

@@ -269,6 +269,9 @@ func (cfg *Config) completeBinaries() error {
 	if cfg.ExecutorBin != "" && !osutil.IsExist(cfg.ExecutorBin) {
 		return fmt.Errorf("bad config syzkaller param: can't find %v", cfg.ExecutorBin)
 	}
+	if cfg.SchedulerBin != "" && !osutil.IsExist(cfg.SchedulerBin) {
+		return fmt.Errorf("bad config syzkaller param: can't find %v", cfg.SchedulerBin)
+	}
 	if cfg.StraceBin != "" {
 		if !osutil.IsExist(cfg.StraceBin) {
 			return fmt.Errorf("bad config param strace_bin: can't find %v", cfg.StraceBin)

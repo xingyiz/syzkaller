@@ -643,20 +643,20 @@ static void loop(void)
 		fail("pipe failed");
 #endif
 
-	// TODO: the scheduler should be managed by syz-fuzzer. 
-	// Although errors can occur when several parallel executors launch the same scheduler, we use it temporarily.
-	int serialise_pid = fork();
-	if (serialise_pid == 0) {
-		debug("[SCHED_LOG] starting the scx_seralise scheduler\n");
-		prctl(PR_SET_PDEATHSIG, SIGINT);
-		srand(time(NULL));
-		unsigned int r = (unsigned int)rand();
-		char r_str[sizeof(unsigned int) * 8 + 1];
-		sprintf(r_str, "%u", r);
-		execl("/scx_serialise", "/scx_serialise", "-s", r_str, NULL);
-		debug("[SCHED_LOG] scx_serialise failed to start\n");
-		return;
-	}
+	// // TODO: the scheduler should be managed by syz-fuzzer. 
+	// // Although errors can occur when several parallel executors launch the same scheduler, we use it temporarily.
+	// int serialise_pid = fork();
+	// if (serialise_pid == 0) {
+	// 	debug("[SCHED_LOG] starting the scx_seralise scheduler\n");
+	// 	prctl(PR_SET_PDEATHSIG, SIGINT);
+	// 	srand(time(NULL));
+	// 	unsigned int r = (unsigned int)rand();
+	// 	char r_str[sizeof(unsigned int) * 8 + 1];
+	// 	sprintf(r_str, "%u", r);
+	// 	execl("/scx_serialise", "/scx_", "-s", r_str, NULL);
+	// 	debug("[SCHED_LOG] scx_serialise failed to start\n");
+	// 	return;
+	// }
 
 	int iter = 0;
 #if SYZ_REPEAT_TIMES
