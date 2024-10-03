@@ -635,33 +635,18 @@ void setup_sched_shm()
 		fail("shm_open(SCHED_SHM,  O_CREAT | O_RDWR, 0666) fail");
 	}
 
-	if (ftruncate(schedShmFd, SHM_SIZE) < 0) {
-		fail("ftruncate(schedShmFd, SHM_SIZE) fail");
-	};
-
+	// The initialization of shared_memory has been done in the scheduler.
+	// So we just skip it here and use it directly.
 
 	shm_ptr = (sched_shm*)mmap(0, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, schedShmFd, 0);
 	if (shm_ptr == MAP_FAILED) {
 		fail("mmap shm_ptr fail");
 	}
-
-	pthread_mutexattr_t mutex_attr;
-    pthread_mutexattr_init(&mutex_attr);
-    pthread_mutexattr_setpshared(&mutex_attr, PTHREAD_PROCESS_SHARED);
-    pthread_mutex_init(&shm_ptr->mutex, &mutex_attr);
-
-    pthread_condattr_t cond_attr;
-    pthread_condattr_init(&cond_attr);
-    pthread_condattr_setpshared(&cond_attr, PTHREAD_PROCESS_SHARED);
-    pthread_cond_init(&shm_ptr->cond, &cond_attr);
-
-    pthread_mutexattr_destroy(&mutex_attr);
-    pthread_condattr_destroy(&cond_attr);
 }
 
 void send_sched_req()
 {
-	debug("[send_sched_req] sending sched requestion");
+	debug("[send_sched_req] sending sched request");
 	pthread_mutex_lock(&shm_ptr->mutex);
 
 	// send data here
