@@ -75,12 +75,12 @@ static void os_init(int argc, char** argv, char* data, size_t data_size)
 
 static void set_sched_scheduler() {
 	struct sched_param param = {.sched_priority = 0};
-	sched_setscheduler(getpid(), SCHED_EXT, &param);
+	sched_setscheduler(gettid(), SCHED_EXT, &param);
 }
 
 static void unset_sched_scheduler() {
 	struct sched_param param = {.sched_priority = 0};
-	sched_setscheduler(getpid(), SCHED_NORMAL, &param);
+	sched_setscheduler(gettid(), SCHED_NORMAL, &param);
 }
 
 static intptr_t execute_syscall(const call_t* c, intptr_t a[kMaxArgs])

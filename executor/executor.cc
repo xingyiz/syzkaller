@@ -646,7 +646,7 @@ void setup_sched_shm()
 
 void send_sched_req()
 {
-	debug("[send_sched_req] sending sched request");
+	debug("[send_sched_req] send sched request\n");
 	pthread_mutex_lock(&shm_ptr->mutex);
 
 	// send data here
@@ -1338,9 +1338,10 @@ void execute_call(thread_t* th)
 	// Arrange for res = -1 and errno = EFAULT result for such case.
 	th->res = -1;
 	errno = EFAULT;
-
-	if (flag_threaded)
+	if (flag_threaded) {
 		set_sched_scheduler();
+		sched_yield();
+	}
 	NONFAILING(th->res = execute_syscall(call, th->args));
 	if (flag_threaded)
 		unset_sched_scheduler();
