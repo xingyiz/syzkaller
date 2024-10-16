@@ -16,6 +16,9 @@ import (
 // As an educated guess, let's use no more than 24 async calls to let executor handle everything.
 const maxAsyncPerProg = 24
 
+const maxConcurrPerProg = 4
+const minConcurrPerProg = 2
+
 // Ensures that if an async call produces a resource, then
 // it is distanced from a call consuming the resource at least
 // by one non-async call.
@@ -128,6 +131,33 @@ func DupCallCollide(origProg *Prog, rand *rand.Rand) (*Prog, error) {
 	var retCalls []*Call
 	for i, c := range prog.Calls {
 		if duplicate[i] {
+			dupCall := cloneCall(c, nil)
+			dupCall.Props.Async = true
+			retCalls = append(retCalls, dupCall)
+		}
+		retCalls = append(retCalls, c)
+	}
+	prog.Calls = retCalls
+	return prog, nil
+}
+
+func randomInRange(min, max int, rand *rand.Rand) int {
+	return min + rand.Intn(max-min+1)
+}
+
+func DupCallSchedCollide(origProg *Prog, rand *rand.Rand) (*Prog, error) {
+	if len(origProg.Calls) < minConcurrPerProg {
+		return nil, fmt.Errorf("the prog is too small for the transformation")
+	}
+	concurrCallSize := randomInRange(minConcurrPerProg, maxConcurrPerProg, rand)
+	if len(origProg.Calls)+concurrCallSize > MaxCalls {
+		return nil, fmt.Errorf("the prog is too large for the transformation")
+	}
+	insert := rand.Intn(len(origProg.Calls) - concurrCallSize + 1)
+	prog := origProg.Clone()
+	var retCalls []*Call
+	for i, c := range prog.Calls {
+		if insert <= i && i < insert+concurrCallSize {
 			dupCall := cloneCall(c, nil)
 			dupCall.Props.Async = true
 			retCalls = append(retCalls, dupCall)

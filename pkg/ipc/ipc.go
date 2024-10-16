@@ -259,6 +259,16 @@ func find_concurrent_threads(info *ProgInfo) int {
 	return len(set)
 }
 
+func countConcurrCallSize(p *prog.Prog) int {
+	concurrCallSize := 0
+	for _, c := range p.Calls {
+		if c.Props.Async {
+			concurrCallSize++
+		}
+	}
+	return concurrCallSize
+}
+
 // Exec starts executor binary to execute program p and returns information about the execution:
 // output: process output
 // info: per-call info
@@ -287,7 +297,9 @@ func (env *Env) Exec(opts *ExecOpts, p *prog.Prog) (output []byte, info *ProgInf
 		return
 	}
 
-	output, hanged, err0 = env.cmd.exec(opts, progData)
+	concurrCallSize := countConcurrCallSize(p)
+
+	output, hanged, err0 = env.cmd.exec(opts, progData, concurrCallSize)
 	if err0 != nil {
 		env.cmd.close()
 		env.cmd = nil
@@ -564,6 +576,8 @@ type executeReq struct {
 	syscallTimeoutMS uint64
 	programTimeoutMS uint64
 	slowdownScale    uint64
+	concurrCallSize  uint64
+	rndSeed          uint64
 	progSize         uint64
 	// This structure is followed by a serialized test program in encodingexec format.
 	// Both when sent over a pipe or in shared memory.
@@ -780,7 +794,8 @@ func (c *command) wait() error {
 	return <-c.exited
 }
 
-func (c *command) exec(opts *ExecOpts, progData []byte) (output []byte, hanged bool, err0 error) {
+func (c *command) exec(opts *ExecOpts, progData []byte, concurrCallSize int) (output []byte, hanged bool, err0 error) {
+	seed := uint32(time.Now().UnixNano() & 0xFFFFFFFF)
 	req := &executeReq{
 		magic:            inMagic,
 		envFlags:         uint64(c.config.Flags),
@@ -789,6 +804,8 @@ func (c *command) exec(opts *ExecOpts, progData []byte) (output []byte, hanged b
 		syscallTimeoutMS: uint64(c.config.Timeouts.Syscall / time.Millisecond),
 		programTimeoutMS: uint64(c.config.Timeouts.Program / time.Millisecond),
 		slowdownScale:    uint64(c.config.Timeouts.Scale),
+		concurrCallSize:  uint64(concurrCallSize),
+		rndSeed:          uint64(seed),
 		progSize:         uint64(len(progData)),
 	}
 	reqData := (*[unsafe.Sizeof(*req)]byte)(unsafe.Pointer(req))[:]

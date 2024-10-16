@@ -14,6 +14,7 @@ const (
 	statSeed             = "exec seeds"
 	statCollide          = "exec collide"
 	statExecTotal        = "exec total"
+	statSchedCollide     = "exec sched collide"
 	statConcurrExecTotal = "concurr exec total"
 	statSeqExecTotal     = "seq exec total"
 	statBufferTooSmall   = "buffer too small"

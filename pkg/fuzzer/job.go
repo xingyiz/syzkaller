@@ -82,6 +82,16 @@ func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 		fuzzer.Config.NoMutateCalls,
 		fuzzer.Corpus.Programs(),
 	)
+	if rnd.Intn(4) == 0 {
+		if cp, err := prog.DupCallSchedCollide(newP, rnd); err == nil {
+			newP = cp
+			return &Request{
+				Prog:       newP,
+				NeedSignal: true,
+				stat:       statSchedCollide,
+			}
+		}
+	}
 	return &Request{
 		Prog:       newP,
 		NeedSignal: true,

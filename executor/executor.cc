@@ -93,6 +93,8 @@ const int kCoverDefaultCount = 6; // otherwise we only init kcov instances insid
 int schedShmFd;
 sched_shm *shm_ptr;
 
+pthread_barrier_t ready_barrier;
+
 // Logical error (e.g. invalid input program), use as an assert() alternative.
 // If such error happens 10+ times in a row, it will be detected as a bug by syz-fuzzer.
 // syz-fuzzer will fail and syz-manager will create a bug for this.
@@ -205,6 +207,9 @@ static bool flag_comparisons;
 static uint64 syscall_timeout_ms;
 static uint64 program_timeout_ms;
 static uint64 slowdown_scale;
+static uint64 num_concurr_call;
+static uint64 rng_seed;
+static bool flag_concurrency;
 
 // Can be used to disginguish whether we're at the initialization stage
 // or we already execute programs.
@@ -333,6 +338,8 @@ struct execute_req {
 	uint64 syscall_timeout_ms;
 	uint64 program_timeout_ms;
 	uint64 slowdown_scale;
+	uint64 num_concurr_call;
+	uint64 rng_seed;
 	uint64 prog_size;
 };
 
@@ -650,12 +657,13 @@ void send_sched_req()
 	pthread_mutex_lock(&shm_ptr->mutex);
 
 	// send data here
-	shm_ptr->available = 1;
-	shm_ptr->num_call = 1;
+	shm_ptr->available = rng_seed;
+	shm_ptr->num_call = num_concurr_call;
 	shm_ptr->pid = procid;
 	
 	pthread_cond_signal(&shm_ptr->cond);
 	pthread_mutex_unlock(&shm_ptr->mutex);
+	debug("[send_sched_req] fnish sending sched request\n");
 }
 
 void parse_env_flags(uint64 flags)
@@ -725,6 +733,9 @@ void receive_execute()
 	syscall_timeout_ms = req.syscall_timeout_ms;
 	program_timeout_ms = req.program_timeout_ms;
 	slowdown_scale = req.slowdown_scale;
+	num_concurr_call = req.num_concurr_call;
+	rng_seed = req.rng_seed;
+	flag_concurrency = flag_threaded && num_concurr_call;
 	flag_collect_signal = req.exec_flags & (1 << 0);
 	flag_collect_cover = req.exec_flags & (1 << 1);
 	flag_dedup_cover = req.exec_flags & (1 << 2);
@@ -733,10 +744,12 @@ void receive_execute()
 	flag_coverage_filter = req.exec_flags & (1 << 5);
 
 	debug("[%llums] exec opts: procid=%llu threaded=%d cover=%d comps=%d dedup=%d signal=%d"
+		  " num_concurr_call=%llu flag_concurrency=%d"
 	      " timeouts=%llu/%llu/%llu prog=%llu filter=%d\n",
 	      current_time_ms() - start_time_ms, procid, flag_threaded, flag_collect_cover,
-	      flag_comparisons, flag_dedup_cover, flag_collect_signal, syscall_timeout_ms,
-	      program_timeout_ms, slowdown_scale, req.prog_size, flag_coverage_filter);
+	      flag_comparisons, flag_dedup_cover, flag_collect_signal, 
+		  num_concurr_call, flag_concurrency,
+		  syscall_timeout_ms, program_timeout_ms, slowdown_scale, req.prog_size, flag_coverage_filter);
 	if (syscall_timeout_ms == 0 || program_timeout_ms <= syscall_timeout_ms || slowdown_scale == 0)
 		failmsg("bad timeouts", "syscall=%llu, program=%llu, scale=%llu",
 			syscall_timeout_ms, program_timeout_ms, slowdown_scale);
@@ -786,6 +799,16 @@ void reply_execute(int status)
 		fail("control pipe write failed");
 }
 
+void prepare_concurr_execution()
+{
+	pthread_barrier_init(&ready_barrier, NULL, num_concurr_call);
+}
+
+void finish_concurr_execution()
+{
+	pthread_barrier_destroy(&ready_barrier);
+}
+
 #if SYZ_EXECUTOR_USES_SHMEM
 void realloc_output_data()
 {
@@ -826,6 +849,9 @@ void execute_one()
 	uint64 prog_extra_cover_timeout = 0;
 	call_props_t call_props;
 	memset(&call_props, 0, sizeof(call_props));
+
+	if (flag_concurrency)
+		prepare_concurr_execution();
 
 	for (;;) {
 		uint64 call_num = read_input(&input_pos);
@@ -1004,6 +1030,9 @@ void execute_one()
 			}
 		}
 	}
+
+	if (flag_concurrency)
+		finish_concurr_execution();
 
 #if SYZ_HAVE_CLOSE_FDS
 	close_fds();
@@ -1311,6 +1340,15 @@ void* worker_thread(void* arg)
 	return 0;
 }
 
+void set_sched_scheduler() {
+	struct sched_param param = {.sched_priority = 0};
+	sched_setscheduler(gettid(), SCHED_EXT, &param);
+}
+void unset_sched_scheduler() {
+	struct sched_param param = {.sched_priority = 0};
+	sched_setscheduler(gettid(), SCHED_NORMAL, &param);
+}
+
 void execute_call(thread_t* th)
 {
 	const call_t* call = &syscalls[th->call_num];
@@ -1331,6 +1369,9 @@ void execute_call(thread_t* th)
 		fail_fd = inject_fault(th->call_props.fail_nth);
 		th->soft_fail_state = true;
 	}
+
+	if (flag_concurrency && th->call_props.async)
+			pthread_barrier_wait(&ready_barrier);
 
 	if (flag_coverage)
 		cover_reset(&th->cov);
