@@ -45,9 +45,13 @@
 
 typedef struct {
     pthread_mutex_t mutex; 
-    pthread_cond_t cond;  
-    int available;
+    pthread_cond_t cond_ready;
+	pthread_cond_t cond_done;
+    int ready;
+	int done;
+
     int num_call;
+	unsigned int rng_seed;
 	unsigned long long pid;
 } sched_shm;
 
@@ -657,11 +661,15 @@ void send_sched_req()
 	pthread_mutex_lock(&shm_ptr->mutex);
 
 	// send data here
-	shm_ptr->available = rng_seed;
+	shm_ptr->ready = 1;
 	shm_ptr->num_call = num_concurr_call;
+	shm_ptr->rng_seed = rng_seed;
 	shm_ptr->pid = procid;
 	
-	pthread_cond_signal(&shm_ptr->cond);
+	pthread_cond_signal(&shm_ptr->cond_ready);
+	while (!shm_ptr->done)
+		pthread_cond_wait(&shm_ptr->cond_done, &shm_ptr->mutex);
+
 	pthread_mutex_unlock(&shm_ptr->mutex);
 	debug("[send_sched_req] fnish sending sched request\n");
 }
@@ -735,13 +743,13 @@ void receive_execute()
 	slowdown_scale = req.slowdown_scale;
 	num_concurr_call = req.num_concurr_call;
 	rng_seed = req.rng_seed;
-	flag_concurrency = flag_threaded && num_concurr_call;
 	flag_collect_signal = req.exec_flags & (1 << 0);
 	flag_collect_cover = req.exec_flags & (1 << 1);
 	flag_dedup_cover = req.exec_flags & (1 << 2);
 	flag_comparisons = req.exec_flags & (1 << 3);
 	flag_threaded = req.exec_flags & (1 << 4);
 	flag_coverage_filter = req.exec_flags & (1 << 5);
+	flag_concurrency = flag_threaded && num_concurr_call;
 
 	debug("[%llums] exec opts: procid=%llu threaded=%d cover=%d comps=%d dedup=%d signal=%d"
 		  " num_concurr_call=%llu flag_concurrency=%d"
@@ -1340,11 +1348,11 @@ void* worker_thread(void* arg)
 	return 0;
 }
 
-void set_sched_scheduler() {
+void set_sched_policy() {
 	struct sched_param param = {.sched_priority = 0};
 	sched_setscheduler(gettid(), SCHED_EXT, &param);
 }
-void unset_sched_scheduler() {
+void unset_sched_policy() {
 	struct sched_param param = {.sched_priority = 0};
 	sched_setscheduler(gettid(), SCHED_NORMAL, &param);
 }
@@ -1379,13 +1387,15 @@ void execute_call(thread_t* th)
 	// Arrange for res = -1 and errno = EFAULT result for such case.
 	th->res = -1;
 	errno = EFAULT;
-	if (flag_threaded) {
-		set_sched_scheduler();
+	if (flag_concurrency && th->call_props.async) {
+		set_sched_policy();
 		sched_yield();
 	}
 	NONFAILING(th->res = execute_syscall(call, th->args));
-	if (flag_threaded)
-		unset_sched_scheduler();
+	if (flag_concurrency && th->call_props.async) {
+		unset_sched_policy();
+		sched_yield();
+	}
 	th->reserrno = errno;
 	// Our pseudo-syscalls may misbehave.
 	if ((th->res == -1 && th->reserrno == 0) || call->attrs.ignore_return)
