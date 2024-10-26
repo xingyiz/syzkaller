@@ -1344,6 +1344,10 @@ void* worker_thread(void* arg)
 		event_reset(&th->ready);
 		execute_call(th);
 		event_set(&th->done);
+		if (flag_concurrency && th->call_props.async) {
+			debug("finish workder_thread now\n");
+			break;
+		}
 	}
 	return 0;
 }
@@ -1379,7 +1383,7 @@ void execute_call(thread_t* th)
 	}
 
 	if (flag_concurrency && th->call_props.async)
-			pthread_barrier_wait(&ready_barrier);
+		pthread_barrier_wait(&ready_barrier);
 
 	if (flag_coverage)
 		cover_reset(&th->cov);
@@ -1392,10 +1396,6 @@ void execute_call(thread_t* th)
 		sched_yield();
 	}
 	NONFAILING(th->res = execute_syscall(call, th->args));
-	if (flag_concurrency && th->call_props.async) {
-		unset_sched_policy();
-		sched_yield();
-	}
 	th->reserrno = errno;
 	// Our pseudo-syscalls may misbehave.
 	if ((th->res == -1 && th->reserrno == 0) || call->attrs.ignore_return)
@@ -1415,7 +1415,7 @@ void execute_call(thread_t* th)
 
 	// If required, run the syscall some more times.
 	// But let's still return res, errno and coverage from the first execution.
-	for (int i = 0; i < th->call_props.rerun; i++)
+	for (int i = 0; !(flag_concurrency && th->call_props.async) && i < th->call_props.rerun; i++)
 		NONFAILING(execute_syscall(call, th->args));
 
 	debug("#%d [%llums] <- %s=0x%llx",
