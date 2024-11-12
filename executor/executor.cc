@@ -858,8 +858,8 @@ void execute_one()
 	call_props_t call_props;
 	memset(&call_props, 0, sizeof(call_props));
 
-	if (flag_concurrency)
-		prepare_concurr_execution();
+	// if (flag_concurrency)
+	// 	prepare_concurr_execution();
 
 	for (;;) {
 		uint64 call_num = read_input(&input_pos);
@@ -1039,8 +1039,8 @@ void execute_one()
 		}
 	}
 
-	if (flag_concurrency)
-		finish_concurr_execution();
+	// if (flag_concurrency)
+	// 	finish_concurr_execution();
 
 #if SYZ_HAVE_CLOSE_FDS
 	close_fds();
@@ -1382,8 +1382,8 @@ void execute_call(thread_t* th)
 		th->soft_fail_state = true;
 	}
 
-	if (flag_concurrency && th->call_props.async)
-		pthread_barrier_wait(&ready_barrier);
+	// if (flag_concurrency && th->call_props.async)
+	// 	pthread_barrier_wait(&ready_barrier);
 
 	if (flag_coverage)
 		cover_reset(&th->cov);
