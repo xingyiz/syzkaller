@@ -16,6 +16,7 @@
 #include <time.h>
 #include <fcntl.h>
 #include <sys/mman.h>
+#include <sys/prctl.h>
 #include <pthread.h>
 
 #if !GOOS_windows
@@ -49,6 +50,7 @@ typedef struct {
 	pthread_cond_t cond_done;
     int ready;
 	int done;
+	bool timeout;
 
     int num_call;
 	unsigned int rng_seed;
@@ -129,7 +131,8 @@ void debug_dump_data(const char* data, int length);
 
 static void receive_execute();
 static void reply_execute(int status);
-static void send_sched_req();
+static void reset_pname();
+static bool send_sched_req();
 
 #if GOOS_akaros
 static void resend_execute(int fd);
@@ -522,6 +525,9 @@ int main(int argc, char** argv)
 #else
 	receive_execute();
 #endif
+
+	reset_pname();
+
 	if (flag_coverage) {
 		int create_count = kCoverDefaultCount, mmap_count = create_count;
 		if (flag_delay_kcov_mmap) {
@@ -655,8 +661,25 @@ void setup_sched_shm()
 	}
 }
 
-void send_sched_req()
+void reset_pname()
 {
+	char comm[24] = {};
+	char new_comm[24] = {};
+	if (prctl(PR_GET_NAME, comm, 0, 0, 0) != 0) {
+		debug("fail to get process name\n");
+		return;
+	}
+	debug("process name is '%s'\n", comm);
+	if (comm[13] == '\0' && comm[13]-48 != (int)procid) {
+		snprintf(new_comm, sizeof(new_comm), "syz-executor.%llu", procid);
+		if (prctl(PR_SET_NAME, new_comm, 0, 0, 0) != 0)
+        	debug("prctl(PR_SET_NAME) failed");
+	}
+}
+
+bool send_sched_req()
+{
+	bool timeout;
 	debug("[send_sched_req] send sched request\n");
 	pthread_mutex_lock(&shm_ptr->mutex);
 
@@ -670,8 +693,10 @@ void send_sched_req()
 	while (!shm_ptr->done)
 		pthread_cond_wait(&shm_ptr->cond_done, &shm_ptr->mutex);
 
+	timeout = shm_ptr->timeout;
 	pthread_mutex_unlock(&shm_ptr->mutex);
-	debug("[send_sched_req] fnish sending sched request\n");
+	debug("[send_sched_req] finish sending sched request\n");
+	return timeout;
 }
 
 void parse_env_flags(uint64 flags)
