@@ -272,7 +272,6 @@ struct cover_t {
 struct thread_t {
 	int id;
 	bool created;
-	bool may_exit;
 	event_t ready;
 	event_t done;
 	uint64* copyout_pos;
@@ -1012,8 +1011,6 @@ thread_t* schedule_call(int call_index, int call_num, uint64 copyout_index, uint
 	int i = 0;
 	for (; i < kMaxThreads; i++) {
 		thread_t* th = &threads[i];
-		if (th->may_exit)
-			continue;
 		if (!th->created)
 			thread_create(th, i, cover_collection_required());
 		if (event_isset(&th->done)) {
@@ -1029,7 +1026,6 @@ thread_t* schedule_call(int call_index, int call_num, uint64 copyout_index, uint
 		exitf("bad thread state in schedule: ready=%d done=%d executing=%d",
 		      event_isset(&th->ready), event_isset(&th->done), th->executing);
 	last_scheduled = th;
-	th->may_exit = call_props.async;
 	th->copyout_pos = pos;
 	th->copyout_index = copyout_index;
 	event_reset(&th->done);
@@ -1296,12 +1292,6 @@ void* worker_thread(void* arg)
 		event_reset(&th->ready);
 		execute_call(th);
 		event_set(&th->done);
-		if (flag_concurrency && th->call_props.async) {
-			handle_completion(th);
-			debug("finish workder_thread now\n");
-			th->created = false;
-			return 0;
-		}
 	}
 	return 0;
 }
@@ -1315,6 +1305,21 @@ void unset_sched_policy() {
 	sched_setscheduler(gettid(), SCHED_NORMAL, &param);
 }
 
+
+struct sched_thread_arg {
+	thread_t* th;
+	const call_t* call;
+};
+
+void* schedule_thread(void* arg)
+{
+	sched_thread_arg* th_arg = (sched_thread_arg*)arg;
+	set_sched_policy();
+	sched_yield();
+	NONFAILING(th_arg->th->res = execute_syscall(th_arg->call, th_arg->th->args));
+	return 0;
+}
+
 void execute_call(thread_t* th)
 {
 	const call_t* call = &syscalls[th->call_num];
@@ -1325,7 +1330,10 @@ void execute_call(thread_t* th)
 			debug(", ");
 		debug("0x%llx", (uint64)th->args[i]);
 	}
-	debug(")\n");
+	if (th->call_props.async)
+		debug(") async\n");
+	else 
+		debug(")\n");
 
 	int fail_fd = -1;
 	th->soft_fail_state = false;
@@ -1346,10 +1354,13 @@ void execute_call(thread_t* th)
 	th->res = -1;
 	errno = EFAULT;
 	if (flag_concurrency && th->call_props.async) {
-		set_sched_policy();
-		sched_yield();
-	}
-	NONFAILING(th->res = execute_syscall(call, th->args));
+		sched_thread_arg arg = {
+			.th = th,
+			.call = call,
+		};
+		thread_start(schedule_thread, &arg);
+	} else
+		NONFAILING(th->res = execute_syscall(call, th->args));
 	th->reserrno = errno;
 	// Our pseudo-syscalls may misbehave.
 	if ((th->res == -1 && th->reserrno == 0) || call->attrs.ignore_return)
