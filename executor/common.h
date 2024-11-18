@@ -706,8 +706,6 @@ static void loop(void)
 #if SYZ_EXECUTOR && SYZ_EXECUTOR_USES_SHMEM
 			close(kOutPipeFd);
 #endif
-			if (flag_concurrency)
-				send_sched_req();
 			execute_one();
 #if SYZ_HAVE_CLOSE_FDS && !SYZ_THREADED
 			close_fds();

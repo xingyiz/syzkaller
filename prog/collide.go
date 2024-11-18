@@ -15,9 +15,7 @@ import (
 // would force the executor to fail and thus stall the fuzzing process.
 // As an educated guess, let's use no more than 24 async calls to let executor handle everything.
 const maxAsyncPerProg = 24
-
-const maxConcurrPerProg = 2
-const minConcurrPerProg = 2
+const ConcurrCallSize = 2
 
 // Ensures that if an async call produces a resource, then
 // it is distanced from a call consuming the resource at least
@@ -87,6 +85,10 @@ func DoubleExecCollide(origProg *Prog, rand *rand.Rand) (*Prog, error) {
 	if len(origProg.Calls)*2 > MaxCalls {
 		return nil, fmt.Errorf("the prog is too big for the DoubleExecCollide transformation")
 	}
+	if len(origProg.Calls) < 2 {
+		// For 1-call programs the behavior is similar to DoubleExecCollide.
+		return nil, fmt.Errorf("the prog is too small for the transformation")
+	}
 	prog := origProg.Clone()
 	dupCalls := cloneCalls(prog.Calls, nil)
 	leftAsync := maxAsyncPerProg
@@ -109,10 +111,11 @@ func DupCallCollide(origProg *Prog, rand *rand.Rand) (*Prog, error) {
 		return nil, fmt.Errorf("the prog is too small for the transformation")
 	}
 	// By default let's duplicate 1/3 calls in the original program.
-	insert := len(origProg.Calls) / 3
+	// insert := len(origProg.Calls) / 3
+	insert := ConcurrCallSize
 	if insert == 0 {
 		// .. but always at least one.
-		insert = 1
+		insert = 2
 	}
 	if insert > maxAsyncPerProg {
 		insert = maxAsyncPerProg
@@ -141,20 +144,15 @@ func DupCallCollide(origProg *Prog, rand *rand.Rand) (*Prog, error) {
 	return prog, nil
 }
 
-func randomInRange(min, max int, rand *rand.Rand) int {
-	return min + rand.Intn(max-min+1)
-}
-
 func DupCallSchedCollide(origProg *Prog, rand *rand.Rand) (*Prog, error) {
-	concurrCallSize := randomInRange(minConcurrPerProg, maxConcurrPerProg, rand)
-	if len(origProg.Calls) < concurrCallSize {
+	if len(origProg.Calls) < ConcurrCallSize {
 		return nil, fmt.Errorf("the prog is too small for the transformation")
 	}
-	if len(origProg.Calls)+concurrCallSize > MaxCalls {
+	if len(origProg.Calls)+ConcurrCallSize > MaxCalls {
 		return nil, fmt.Errorf("the prog is too large for the transformation")
 	}
 	duplicate := map[int]bool{}
-	for _, pos := range rand.Perm(len(origProg.Calls))[:concurrCallSize] {
+	for _, pos := range rand.Perm(len(origProg.Calls))[:ConcurrCallSize] {
 		duplicate[pos] = true
 	}
 	prog := origProg.Clone()
@@ -168,5 +166,18 @@ func DupCallSchedCollide(origProg *Prog, rand *rand.Rand) (*Prog, error) {
 		retCalls = append(retCalls, c)
 	}
 	prog.Calls = retCalls
+
+	asyncCounter := 0
+	for _, c := range prog.Calls {
+		if asyncCounter >= 2 {
+			c.Props.Async = false
+			continue
+		}
+
+		if c.Props.Async {
+			asyncCounter += 1
+		}
+	}
+
 	return prog, nil
 }

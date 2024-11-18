@@ -41,21 +41,6 @@
 #define GIT_REVISION "unknown"
 #endif
 
-#define SCHED_SHM "/sched_shared_memory"
-#define SHM_SIZE 1024
-
-typedef struct {
-    pthread_mutex_t mutex; 
-    pthread_cond_t cond_ready;
-	pthread_cond_t cond_done;
-    int ready;
-	int done;
-	bool timeout;
-
-    int num_call;
-	unsigned int rng_seed;
-	unsigned long long pid;
-} sched_shm;
 
 #define ARRAY_SIZE(x) (sizeof(x) / sizeof((x)[0]))
 
@@ -96,10 +81,6 @@ const int kCoverOptimizedCount = 12; // the number of kcov instances to be opene
 const int kCoverOptimizedPreMmap = 3; // this many will be mmapped inside main(), others - when needed.
 const int kCoverDefaultCount = 6; // otherwise we only init kcov instances inside main()
 
-int schedShmFd;
-sched_shm *shm_ptr;
-
-pthread_barrier_t ready_barrier;
 
 // Logical error (e.g. invalid input program), use as an assert() alternative.
 // If such error happens 10+ times in a row, it will be detected as a bug by syz-fuzzer.
@@ -132,7 +113,6 @@ void debug_dump_data(const char* data, int length);
 static void receive_execute();
 static void reply_execute(int status);
 static void reset_pname();
-static bool send_sched_req();
 
 #if GOOS_akaros
 static void resend_execute(int fd);
@@ -292,6 +272,7 @@ struct cover_t {
 struct thread_t {
 	int id;
 	bool created;
+	bool may_exit;
 	event_t ready;
 	event_t done;
 	uint64* copyout_pos;
@@ -422,7 +403,6 @@ static uint64 swap(uint64 v, uint64 size, uint64 bf);
 static void copyin(char* addr, uint64 val, uint64 size, uint64 bf, uint64 bf_off, uint64 bf_len);
 static bool copyout(char* addr, uint64 size, uint64* res);
 static void setup_control_pipes();
-static void setup_sched_shm();
 static void setup_features(char** enable, int n);
 
 #include "syscalls.h"
@@ -517,8 +497,6 @@ int main(int argc, char** argv)
 	use_temporary_dir();
 	install_segv_handler();
 	setup_control_pipes();
-
-	setup_sched_shm();
 
 #if SYZ_EXECUTOR_USES_FORK_SERVER
 	receive_handshake();
@@ -645,22 +623,6 @@ void setup_control_pipes()
 		fail("dup2(2, 0) failed");
 }
 
-void setup_sched_shm() 
-{
-	schedShmFd = shm_open(SCHED_SHM,  O_CREAT | O_RDWR, 0666);
-	if (schedShmFd < 0) {
-		fail("shm_open(SCHED_SHM,  O_CREAT | O_RDWR, 0666) fail");
-	}
-
-	// The initialization of shared_memory has been done in the scheduler.
-	// So we just skip it here and use it directly.
-
-	shm_ptr = (sched_shm*)mmap(0, SHM_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, schedShmFd, 0);
-	if (shm_ptr == MAP_FAILED) {
-		fail("mmap shm_ptr fail");
-	}
-}
-
 void reset_pname()
 {
 	char comm[24] = {};
@@ -675,28 +637,6 @@ void reset_pname()
 		if (prctl(PR_SET_NAME, new_comm, 0, 0, 0) != 0)
         	debug("prctl(PR_SET_NAME) failed");
 	}
-}
-
-bool send_sched_req()
-{
-	bool timeout;
-	debug("[send_sched_req] send sched request\n");
-	pthread_mutex_lock(&shm_ptr->mutex);
-
-	// send data here
-	shm_ptr->ready = 1;
-	shm_ptr->num_call = num_concurr_call;
-	shm_ptr->rng_seed = rng_seed;
-	shm_ptr->pid = procid;
-	
-	pthread_cond_signal(&shm_ptr->cond_ready);
-	while (!shm_ptr->done)
-		pthread_cond_wait(&shm_ptr->cond_done, &shm_ptr->mutex);
-
-	timeout = shm_ptr->timeout;
-	pthread_mutex_unlock(&shm_ptr->mutex);
-	debug("[send_sched_req] finish sending sched request\n");
-	return timeout;
 }
 
 void parse_env_flags(uint64 flags)
@@ -832,16 +772,6 @@ void reply_execute(int status)
 		fail("control pipe write failed");
 }
 
-void prepare_concurr_execution()
-{
-	pthread_barrier_init(&ready_barrier, NULL, num_concurr_call);
-}
-
-void finish_concurr_execution()
-{
-	pthread_barrier_destroy(&ready_barrier);
-}
-
 #if SYZ_EXECUTOR_USES_SHMEM
 void realloc_output_data()
 {
@@ -882,9 +812,6 @@ void execute_one()
 	uint64 prog_extra_cover_timeout = 0;
 	call_props_t call_props;
 	memset(&call_props, 0, sizeof(call_props));
-
-	// if (flag_concurrency)
-	// 	prepare_concurr_execution();
 
 	for (;;) {
 		uint64 call_num = read_input(&input_pos);
@@ -1064,9 +991,6 @@ void execute_one()
 		}
 	}
 
-	// if (flag_concurrency)
-	// 	finish_concurr_execution();
-
 #if SYZ_HAVE_CLOSE_FDS
 	close_fds();
 #endif
@@ -1088,6 +1012,8 @@ thread_t* schedule_call(int call_index, int call_num, uint64 copyout_index, uint
 	int i = 0;
 	for (; i < kMaxThreads; i++) {
 		thread_t* th = &threads[i];
+		if (th->may_exit)
+			continue;
 		if (!th->created)
 			thread_create(th, i, cover_collection_required());
 		if (event_isset(&th->done)) {
@@ -1103,6 +1029,7 @@ thread_t* schedule_call(int call_index, int call_num, uint64 copyout_index, uint
 		exitf("bad thread state in schedule: ready=%d done=%d executing=%d",
 		      event_isset(&th->ready), event_isset(&th->done), th->executing);
 	last_scheduled = th;
+	th->may_exit = call_props.async;
 	th->copyout_pos = pos;
 	th->copyout_index = copyout_index;
 	event_reset(&th->done);
@@ -1370,8 +1297,10 @@ void* worker_thread(void* arg)
 		execute_call(th);
 		event_set(&th->done);
 		if (flag_concurrency && th->call_props.async) {
+			handle_completion(th);
 			debug("finish workder_thread now\n");
-			break;
+			th->created = false;
+			return 0;
 		}
 	}
 	return 0;
