@@ -1358,7 +1358,7 @@ void execute_call(thread_t* th)
 			.th = th,
 			.call = call,
 		};
-		thread_start(schedule_thread, &arg);
+		thread_run(schedule_thread, &arg);
 	} else
 		NONFAILING(th->res = execute_syscall(call, th->args));
 	th->reserrno = errno;
@@ -1380,7 +1380,7 @@ void execute_call(thread_t* th)
 
 	// If required, run the syscall some more times.
 	// But let's still return res, errno and coverage from the first execution.
-	for (int i = 0; !(flag_concurrency && th->call_props.async) && i < th->call_props.rerun; i++)
+	for (int i = 0; i < th->call_props.rerun; i++)
 		NONFAILING(execute_syscall(call, th->args));
 
 	debug("#%d [%llums] <- %s=0x%llx",
