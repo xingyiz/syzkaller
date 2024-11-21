@@ -73,6 +73,7 @@ func (proc *Proc) loop() {
 }
 
 func (proc *Proc) executeRaw(opts *ipc.ExecOpts, p *prog.Prog) *ipc.ProgInfo {
+	p = prog.ValidateAsyncCall(p)
 	proc.tool.checkDisabledCalls(p)
 	for try := 0; ; try++ {
 		var output []byte

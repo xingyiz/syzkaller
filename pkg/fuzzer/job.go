@@ -82,7 +82,7 @@ func mutateProgRequest(fuzzer *Fuzzer, rnd *rand.Rand) *Request {
 		fuzzer.Config.NoMutateCalls,
 		fuzzer.Corpus.Programs(),
 	)
-	if rnd.Intn(4) == 0 {
+	if rnd.Intn(3) == 0 {
 		if cp, err := prog.DupCallSchedCollide(newP, rnd); err == nil {
 			newP = cp
 			return &Request{
@@ -333,13 +333,13 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 }
 
 func randomCollide(origP *prog.Prog, rnd *rand.Rand) *prog.Prog {
-	if rnd.Intn(5) == 0 {
-		// Old-style collide with a 20% probability.
-		p, err := prog.DoubleExecCollide(origP, rnd)
-		if err == nil {
-			return p
-		}
-	}
+	// if rnd.Intn(5) == 0 {
+	// 	// Old-style collide with a 20% probability.
+	// 	p, err := prog.DoubleExecCollide(origP, rnd)
+	// 	if err == nil {
+	// 		return p
+	// 	}
+	// }
 	if rnd.Intn(4) == 0 {
 		// Duplicate random calls with a 20% probability (25% * 80%).
 		p, err := prog.DupCallCollide(origP, rnd)

@@ -144,6 +144,26 @@ func DupCallCollide(origProg *Prog, rand *rand.Rand) (*Prog, error) {
 	return prog, nil
 }
 
+func ValidateAsyncCall(origProg *Prog) *Prog {
+	if len(origProg.Calls) < ConcurrCallSize {
+		return origProg
+	}
+
+	asyncCounter := 0
+	prog := origProg.Clone()
+	for _, c := range prog.Calls {
+		if asyncCounter >= ConcurrCallSize {
+			c.Props.Async = false
+			continue
+		}
+
+		if c.Props.Async {
+			asyncCounter += 1
+		}
+	}
+	return prog
+}
+
 func DupCallSchedCollide(origProg *Prog, rand *rand.Rand) (*Prog, error) {
 	if len(origProg.Calls) < ConcurrCallSize {
 		return nil, fmt.Errorf("the prog is too small for the transformation")
@@ -166,18 +186,5 @@ func DupCallSchedCollide(origProg *Prog, rand *rand.Rand) (*Prog, error) {
 		retCalls = append(retCalls, c)
 	}
 	prog.Calls = retCalls
-
-	asyncCounter := 0
-	for _, c := range prog.Calls {
-		if asyncCounter >= 2 {
-			c.Props.Async = false
-			continue
-		}
-
-		if c.Props.Async {
-			asyncCounter += 1
-		}
-	}
-
 	return prog, nil
 }
