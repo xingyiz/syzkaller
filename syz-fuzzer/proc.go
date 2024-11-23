@@ -69,6 +69,21 @@ func (proc *Proc) loop() {
 		proc.tool.fuzzer.Done(req, &fuzzer.Result{
 			Info: info,
 		})
+
+		if proc.tool.fuzzer.Config.Collide && rnd.Intn(1000) < 2 {
+			const iters = 100
+			newP, err := prog.DupCallSchedCollide(req.Prog, rnd)
+			if err == nil {
+				atomic.AddUint64(&proc.env.StatSchedCollide, iters)
+				newReq := req.Clone(newP)
+				for i := 0; i < iters; i++ {
+					info := proc.executeRaw(&opts, newReq.Prog)
+					proc.tool.fuzzer.Done(newReq, &fuzzer.Result{
+						Info: info,
+					})
+				}
+			}
+		}
 	}
 }
 

@@ -34,6 +34,7 @@ type Stats struct {
 	maxSignal           Stat
 	seqExeclTotal       Stat
 	concurrExeclTotal   Stat
+	schedCollideTotal   Stat
 
 	mu         sync.Mutex
 	namedStats map[string]uint64
@@ -107,6 +108,8 @@ func (stats *Stats) mergeNamed(named map[string]uint64) {
 			stats.concurrExeclTotal.add(int(v))
 		case "seq exec total":
 			stats.seqExeclTotal.add(int(v))
+		case "sched collide total":
+			stats.schedCollideTotal.add(int(v))
 		default:
 			stats.namedStats[k] += v
 		}

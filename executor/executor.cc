@@ -1344,9 +1344,6 @@ void execute_call(thread_t* th)
 		th->soft_fail_state = true;
 	}
 
-	// if (flag_concurrency && th->call_props.async)
-	// 	pthread_barrier_wait(&ready_barrier);
-
 	if (flag_coverage)
 		cover_reset(&th->cov);
 	// For pseudo-syscalls and user-space functions NONFAILING can abort before assigning to th->res.
@@ -1361,6 +1358,11 @@ void execute_call(thread_t* th)
 		thread_run(schedule_thread, &arg);
 	} else
 		NONFAILING(th->res = execute_syscall(call, th->args));
+	// if (flag_concurrency && th->call_props.async) {
+	// 	set_sched_policy();
+	// 	sched_yield();
+	// }
+	// NONFAILING(th->res = execute_syscall(call, th->args));
 	th->reserrno = errno;
 	// Our pseudo-syscalls may misbehave.
 	if ((th->res == -1 && th->reserrno == 0) || call->attrs.ignore_return)

@@ -108,6 +108,18 @@ type Result struct {
 	Stop bool
 }
 
+func (req *Request) Clone(prog *prog.Prog) *Request {
+	return &Request{
+		Prog:         prog,
+		NeedSignal:   req.NeedSignal,
+		NeedCover:    req.NeedCover,
+		NeedRawCover: req.NeedRawCover,
+		NeedHints:    req.NeedHints,
+		stat:         req.stat,
+		flags:        req.flags,
+	}
+}
+
 func (fuzzer *Fuzzer) Done(req *Request, res *Result) {
 	// Triage individual calls.
 	// We do it before unblocking the waiting threads because
