@@ -118,6 +118,9 @@ type Env struct {
 	StatSeqExecs     uint64
 	StatConcurrExecs uint64
 	StatSchedCollide uint64
+
+        StatExecTime uint64
+	StatExecsNew uint64
 }
 
 const (
