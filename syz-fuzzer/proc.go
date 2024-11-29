@@ -77,14 +77,7 @@ func (proc *Proc) loop() {
 				atomic.AddUint64(&proc.env.StatSchedCollide, iters)
 				newReq := req.Clone(newP)
 				for i := 0; i < iters; i++ {
-					start := time.Now()
 					info := proc.executeRaw(&opts, newReq.Prog)
-					if info != nil {
-			                        end := time.Now()
-                                               duration := end.Sub(start)
-                                               atomic.AddUint64(&proc.env.StatExecTime, uint64(duration.Milliseconds()))
-                                               atomic.AddUint64(&proc.env.StatExecsNew, 1)
-                                       }
 					proc.tool.fuzzer.Done(newReq, &fuzzer.Result{
 						Info: info,
 					})
