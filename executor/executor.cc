@@ -348,7 +348,6 @@ struct call_reply {
 	uint32 call_index;
 	uint32 call_num;
 	uint32 reserrno;
-	uint32 thread_id;
 	uint32 flags;
 	uint32 signal_size;
 	uint32 cover_size;
@@ -1169,7 +1168,6 @@ void write_call_output(thread_t* th, bool finished)
 	write_output(th->call_index);
 	write_output(th->call_num);
 	write_output(reserrno);
-	write_output(th->id);
 	write_output(call_flags);
 	uint32* signal_count_pos = write_output(0); // filled in later
 	uint32* cover_count_pos = write_output(0); // filled in later
@@ -1215,7 +1213,6 @@ void write_call_output(thread_t* th, bool finished)
 	reply.call_index = th->call_index;
 	reply.call_num = th->call_num;
 	reply.reserrno = reserrno;
-	reply.thread_id = th->id;
 	reply.flags = call_flags;
 	reply.signal_size = 0;
 	reply.cover_size = 0;
