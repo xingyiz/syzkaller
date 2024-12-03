@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"flag"
 	"fmt"
+	"math/rand"
 	"os"
 	"runtime"
 	"strconv"
@@ -53,6 +54,7 @@ var (
 	// Note, however, that we do not have to do the same for `syz-prog2c`, as `collide` was there false
 	// by default.
 	flagCollide = flag.Bool("collide", false, "(DEPRECATED) collide syscalls to provoke data races")
+	flagSched   = flag.Bool("sched", false, "collide syscalls to provoke data races")
 )
 
 func main() {
@@ -80,6 +82,19 @@ func main() {
 	if len(progs) == 0 {
 		return
 	}
+
+	if *flagSched {
+		seed := time.Now().UnixNano()
+		rnd := rand.New(rand.NewSource(seed))
+		for i, p := range progs {
+			newP, err := prog.DupCallSchedCollide(p, rnd)
+			if err != nil {
+				continue
+			}
+			progs[i] = newP
+		}
+	}
+
 	features, err := host.Check(target)
 	if err != nil {
 		log.Fatalf("%v", err)
