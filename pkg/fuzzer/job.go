@@ -322,13 +322,29 @@ func (job *smashJob) run(fuzzer *Fuzzer) {
 		if result.Stop {
 			return
 		}
+		// if fuzzer.Config.Collide {
+		// 	result := fuzzer.exec(job, &Request{
+		// 		Prog: randomCollide(p, rnd),
+		// 		stat: statCollide,
+		// 	})
+		// 	if result.Stop {
+		// 		return
+		// 	}
+		// }
 		if fuzzer.Config.Collide {
-			result := fuzzer.exec(job, &Request{
-				Prog: randomCollide(p, rnd),
-				stat: statCollide,
-			})
-			if result.Stop {
-				return
+			newP, err := prog.DupCallSchedCollide(p, rnd)
+			if err != nil {
+				continue
+			}
+			const sched_iters = 20
+			for j := 0; j < sched_iters; j++ {
+				result := fuzzer.exec(job, &Request{
+					Prog: newP,
+					stat: statCollide,
+				})
+				if result.Stop {
+					return
+				}
 			}
 		}
 	}

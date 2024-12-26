@@ -108,7 +108,8 @@ func (stats *Stats) mergeNamed(named map[string]uint64) {
 			stats.concurrExeclTotal.add(int(v))
 		case "seq exec total":
 			stats.seqExeclTotal.add(int(v))
-		case "sched collide total":
+		// case "sched collide total":
+		case "exec collide":
 			stats.schedCollideTotal.add(int(v))
 		default:
 			stats.namedStats[k] += v
