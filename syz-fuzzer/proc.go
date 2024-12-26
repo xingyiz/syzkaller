@@ -70,8 +70,8 @@ func (proc *Proc) loop() {
 			Info: info,
 		})
 
-		if proc.tool.fuzzer.Config.Collide && rnd.Intn(1000) < 2 {
-			const iters = 100
+		if proc.tool.fuzzer.Config.Collide && rnd.Intn(1000) < 5 {
+			const iters = 50
 			newP, err := prog.DupCallSchedCollide(req.Prog, rnd)
 			if err == nil {
 				atomic.AddUint64(&proc.env.StatSchedCollide, iters)
