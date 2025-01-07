@@ -839,13 +839,13 @@ func (mgr *Manager) runInstanceInner(index int, instanceName string) (*report.Re
 		procs = 1
 	}
 
-	if schedulerBin != "" {
-		schedCmd := fmt.Sprintf("%v", schedulerBin)
-		_, _, err = inst.Run(mgr.cfg.Timeouts.VMRunningTime, mgr.vmStop, schedCmd)
-		if err != nil {
-			return nil, nil, fmt.Errorf("failed to run scheduler: %w", err)
-		}
-	}
+	// if schedulerBin != "" {
+	// 	schedCmd := fmt.Sprintf("%v", schedulerBin)
+	// 	_, _, err = inst.Run(mgr.cfg.Timeouts.VMRunningTime, mgr.vmStop, schedCmd)
+	// 	if err != nil {
+	// 		return nil, nil, fmt.Errorf("failed to run scheduler: %w", err)
+	// 	}
+	// }
 
 	// Run the fuzzer binary.
 	start := time.Now()
@@ -875,6 +875,9 @@ func (mgr *Manager) runInstanceInner(index int, instanceName string) (*report.Re
 		},
 	}
 	cmd := instance.FuzzerCmd(args)
+	if schedulerBin != "" {
+		cmd = fmt.Sprintf("%v && %v", schedulerBin, cmd)
+	}
 	outc, errc, err := inst.Run(mgr.cfg.Timeouts.VMRunningTime, mgr.vmStop, cmd)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to run fuzzer: %w", err)
