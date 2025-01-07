@@ -188,3 +188,35 @@ func DupCallSchedCollide(origProg *Prog, rand *rand.Rand) (*Prog, error) {
 	prog.Calls = retCalls
 	return prog, nil
 }
+
+func SchedCollide(origProg *Prog, rand *rand.Rand) (*Prog, error) {
+	if len(origProg.Calls) < ConcurrCallSize {
+		return nil, fmt.Errorf("the prog is too small for the transformation")
+	}
+
+	prog := origProg.Clone()
+	nonProducerCalls := map[int]bool{}
+	for i, c := range prog.Calls {
+		if c.Ret == nil {
+			nonProducerCalls[i] = false
+		}
+	}
+
+	if len(nonProducerCalls) < ConcurrCallSize {
+		return nil, fmt.Errorf("the prog is too small for the transformation")
+	}
+
+	for _, pos := range rand.Perm(len(nonProducerCalls))[:ConcurrCallSize] {
+		nonProducerCalls[pos] = true
+	}
+
+	var retCalls []*Call
+	for i, c := range prog.Calls {
+		if async, exists := nonProducerCalls[i]; async && exists {
+			c.Props.Async = true
+		}
+		retCalls = append(retCalls, c)
+	}
+	prog.Calls = retCalls
+	return prog, nil
+}
