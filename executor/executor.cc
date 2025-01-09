@@ -714,7 +714,7 @@ void receive_execute()
 	flag_coverage_filter = req.exec_flags & (1 << 5);
 	flag_concurrency = flag_threaded && (num_concurr_call == 2);
 	if (flag_concurrency)
-		slowdown_scale += 5
+		slowdown_scale += 5;
 
 	debug("[%llums] exec opts: procid=%llu threaded=%d cover=%d comps=%d dedup=%d signal=%d"
 		  " num_concurr_call=%llu flag_concurrency=%d"
