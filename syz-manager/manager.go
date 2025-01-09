@@ -876,7 +876,7 @@ func (mgr *Manager) runInstanceInner(index int, instanceName string) (*report.Re
 	}
 	cmd := instance.FuzzerCmd(args)
 	if schedulerBin != "" {
-		cmd = fmt.Sprintf("%v && %v", schedulerBin, cmd)
+		cmd = fmt.Sprintf("%v -r 1 && %v", schedulerBin, cmd)
 	}
 	outc, errc, err := inst.Run(mgr.cfg.Timeouts.VMRunningTime, mgr.vmStop, cmd)
 	if err != nil {
